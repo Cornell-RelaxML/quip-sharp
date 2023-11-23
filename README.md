@@ -48,7 +48,7 @@ See our blog post for a full set of results.
 
 ## Text Generation
 
-To use our models as part of an interactive generation script, run `CUDA_VISIBLE_DEVICES=0 python interactive_gen.py --hf_path <HF version path>`. There are additional flags that control the number of beams for beam decoding and maximum number of generated tokens as well.
+To use our models as part of an interactive generation script, run `CUDA_VISIBLE_DEVICES=0 python interactive_gen.py --hf_path <HF version path> --max_length <max generation length>`.
 
 ## Model Zoo
 We provide Llama-1 and Llama-2 quantized models available on Hugging Face.
