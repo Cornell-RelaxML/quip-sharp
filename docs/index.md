@@ -119,14 +119,14 @@ $$\operatorname{tr}(\tilde W \tilde H \tilde W^T) = \operatorname{tr}((U W V^T) 
 
 To construct $U$ and $V$ from above, we use the RHT, which is amenable to fast GPU implementation.
 In fact, one of the CUDA sample kernels is the RHT.
-The RHT performs the multiplication $x \in \mathbb{R}^n \to USx$, where $U$ is a $n \times n$ Hadamard matrix (scaled by a normalization factor) and $S$ is a $n$ dimensional random sign vector.
+The RHT performs the multiplication $x \in \mathbb{R}^n \to \mathbb{H}Sx$, where $\mathbb{H}$ is a $n \times n$ Hadamard matrix (scaled by a normalization factor) and $S$ is a $n$ dimensional random sign vector.
 The RHT concentrates the entries of $x$ and thus results in incoherent matrices through an [application of the Azuma-Hoeffding inequality](http://www.cs.cmu.edu/afs/cs/user/dwoodruf/www/teaching/15859-fall20/lecture_2.1.pdf).
 Note that the Hadamard transform can be computed more efficiently than a matrix multiplication via the fast Walsh-Hadamard transform, which we employ directly for powers of 2.
 To handle non power-of-two values of $n$, we perform the following algorithm:
 
 1. Let $p$ be the remaining dimension and reshape $Sx$ into a $n/p \times p$ matrix.
 2. Perform the fast Walsh-Hadamard transform on $Sx$ associated with dimension $n/p$.
-3. Let $U'$ be a $p \times p$ scaled Hadamard matrix. Apply this Hadamard transform to $Sx$ on the right, and reshape back.
+3. Let $\mathbb{H}'$ be a $p \times p$ scaled Hadamard matrix. Apply this Hadamard transform to $Sx$ on the right, and reshape back.
 
 The only consequence of performing RHT is needing to store two sign vectors per layer: $S_U$ and $S_V$.
 Since large language models have large weight and Hessian matrices, this only increases the number of bits per weight in practice by less than 0.01, or a negligible amount.

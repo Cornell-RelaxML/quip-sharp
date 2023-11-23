@@ -403,13 +403,14 @@ Transformation (RHT)</h4>
 class="math inline">\(V\)</span> from above, we use the RHT, which is
 amenable to fast GPU implementation. In fact, one of the CUDA sample
 kernels is the RHT. The RHT performs the multiplication <span
-class="math inline">\(x \in \mathbb{R}^n \to USx\)</span>, where <span
-class="math inline">\(U\)</span> is a <span class="math inline">\(n
-\times n\)</span> Hadamard matrix (scaled by a normalization factor) and
-<span class="math inline">\(S\)</span> is a <span
-class="math inline">\(n\)</span> dimensional random sign vector. The RHT
-concentrates the entries of <span class="math inline">\(x\)</span> and
-thus results in incoherent matrices through an <a
+class="math inline">\(x \in \mathbb{R}^n \to \mathbb{H}Sx\)</span>,
+where <span class="math inline">\(\mathbb{H}\)</span> is a <span
+class="math inline">\(n \times n\)</span> Hadamard matrix (scaled by a
+normalization factor) and <span class="math inline">\(S\)</span> is a
+<span class="math inline">\(n\)</span> dimensional random sign vector.
+The RHT concentrates the entries of <span
+class="math inline">\(x\)</span> and thus results in incoherent matrices
+through an <a
 href="http://www.cs.cmu.edu/afs/cs/user/dwoodruf/www/teaching/15859-fall20/lecture_2.1.pdf">application
 of the Azuma-Hoeffding inequality</a>. Note that the Hadamard transform
 can be computed more efficiently than a matrix multiplication via the
@@ -424,7 +425,7 @@ dimension and reshape <span class="math inline">\(Sx\)</span> into a
 <li>Perform the fast Walsh-Hadamard transform on <span
 class="math inline">\(Sx\)</span> associated with dimension <span
 class="math inline">\(n/p\)</span>.</li>
-<li>Let <span class="math inline">\(U&#39;\)</span> be a <span
+<li>Let <span class="math inline">\(\mathbb{H}&#39;\)</span> be a <span
 class="math inline">\(p \times p\)</span> scaled Hadamard matrix. Apply
 this Hadamard transform to <span class="math inline">\(Sx\)</span> on
 the right, and reshape back.</li>
