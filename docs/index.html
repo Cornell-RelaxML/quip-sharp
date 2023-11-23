@@ -403,29 +403,31 @@ Transformation (RHT)</h4>
 class="math inline">\(V\)</span> from above, we use the RHT, which is
 amenable to fast GPU implementation. In fact, one of the CUDA sample
 kernels is the RHT. The RHT performs the multiplication <span
-class="math inline">\(x \in \mathbb{R}^n \to HSx\)</span>, where <span
-class="math inline">\(H\)</span> is a <span class="math inline">\(n
-\times n\)</span> Hadamard matrix and <span
-class="math inline">\(S\)</span> is a <span
+class="math inline">\(x \in \mathbb{R}^n \to USx\)</span>, where <span
+class="math inline">\(U\)</span> is a <span class="math inline">\(n
+\times n\)</span> Hadamard matrix (scaled by a normalization factor) and
+<span class="math inline">\(S\)</span> is a <span
 class="math inline">\(n\)</span> dimensional random sign vector. The RHT
 concentrates the entries of <span class="math inline">\(x\)</span> and
 thus results in incoherent matrices through an <a
 href="http://www.cs.cmu.edu/afs/cs/user/dwoodruf/www/teaching/15859-fall20/lecture_2.1.pdf">application
-of the Azuma-Hoeffding inequality</a>. To handle non power-of-two values
-of <span class="math inline">\(n\)</span>, we perform the following
+of the Azuma-Hoeffding inequality</a>. Note that the Hadamard transform
+can be computed more efficiently than a matrix multiplication via the
+fast Walsh-Hadamard transform, which we employ directly for powers of 2.
+To handle non power-of-two values of <span
+class="math inline">\(n\)</span>, we perform the following
 algorithm:</p>
 <ol type="1">
-<li>If <span class="math inline">\(n\)</span> is not a power of 2, let
-<span class="math inline">\(p\)</span> be the remaining dimension and
-reshape <span class="math inline">\(x\)</span> into a <span
-class="math inline">\(p \times n/p\)</span> matrix.</li>
-<li>Let <span class="math inline">\(U&#39;\)</span> be the <span
-class="math inline">\(p \times p\)</span> Hadamard matrix.</li>
-<li>Peform the fast Walsh-Hadamard transform on <span
-class="math inline">\(x\)</span> associated with <span
-class="math inline">\(U\)</span>, and then a Hadamard transform
-associated with <span class="math inline">\(U&#39;\)</span> on the left,
-and reshape back.</li>
+<li>Let <span class="math inline">\(p\)</span> be the remaining
+dimension and reshape <span class="math inline">\(Sx\)</span> into a
+<span class="math inline">\(n/p \times p\)</span> matrix.</li>
+<li>Perform the fast Walsh-Hadamard transform on <span
+class="math inline">\(Sx\)</span> associated with dimension <span
+class="math inline">\(n/p\)</span>.</li>
+<li>Let <span class="math inline">\(U&#39;\)</span> be a <span
+class="math inline">\(p \times p\)</span> scaled Hadamard matrix. Apply
+this Hadamard transform to <span class="math inline">\(Sx\)</span> on
+the right, and reshape back.</li>
 </ol>
 <p>The only consequence of performing RHT is needing to store two sign
 vectors per layer: <span class="math inline">\(S_U\)</span> and <span
