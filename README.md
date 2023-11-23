@@ -30,7 +30,7 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
     - `--base_model <Llama 1 or 2 model>`. 
     For Llama 1, we provide weights at `relaxml/Llama-1-<7,13,30,65>b-hf`. For Llama 2, use the officially provided weights at https://huggingface.co/meta-llama. 
     - `--hessian_path <path to precomputed hessians>`. 
-    For Llama 1 we provide precomputed hessians at `relaxml/Hessians-Llama-1-<7,13,30,65>b-6144`. For Llama 2 we provide precomputed hessians at `relaxml/Hessians-Llama-2-<7,13,70>b-6144`.
+    For Llama 1 we provide precomputed hessians at repo_id's `relaxml/Hessians-Llama-1-<7,13,30,65>b-6144`. For Llama 2 we provide precomputed hessians at repo_id's `relaxml/Hessians-Llama-2-<7,13,70>b-6144`. To download them, run `python scripts/download_hf.py --folder_path <local path to save hessians> --repo_id <repo_id> --read_token <huggingface read token>`.
     - `--codebook <codebook argument>`. 
     We recommend using the 2 bit E8P codebook with `E8P12`. This codebook gives the best quantization at 2 bits. Other options are the `D4` codebook at 2 bits, and the 4 bit Half Integer 1 Column grid with `HI4B1C`. See our blogpost for details on the codebooks.
     - `--scale_override <quantization scale parameter>`. 
