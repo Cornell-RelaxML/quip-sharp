@@ -1,0 +1,8 @@
+README.md
+hadamard_cuda.cpp
+hadamard_cuda_kernel.cu
+setup.py
+hadamard_cuda.egg-info/PKG-INFO
+hadamard_cuda.egg-info/SOURCES.txt
+hadamard_cuda.egg-info/dependency_links.txt
+hadamard_cuda.egg-info/top_level.txt

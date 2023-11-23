@@ -1,0 +1,16 @@
+*.pt
+*~
+*.safetensors
+*.err
+*.out
+*.json
+__pycache__/
+#*
+slurm_out/
+hfized/
+quiptools/build/
+quiptools/dist
+hadamard_cuda/build/
+hadamard_cuda/dist/
+report*.nsys-rep
+report*.sqlite
