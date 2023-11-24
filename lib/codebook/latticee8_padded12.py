@@ -228,7 +228,7 @@ class QuantizedE8P12Linear(nn.Module):
             ABx = Bx @ A.t().to(torch.float32)
 
         # TODO: find the optimal threshold
-        if x.size(0) < 8:
+        if x.size(0) < 3:
             # TODO: hoist this chunk
             codebook = torch.zeros((256,), dtype=torch.int64, device=self.codebook.grid_abs.device)
             for i in range(8):
