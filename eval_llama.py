@@ -23,7 +23,7 @@ parser.add_argument('--no_use_flash_attn', action='store_true')
 
 def main(args):
     model, model_str = model_from_hf_path(args.hf_path,
-                                          use_cuda_graph=not args.no_use_cuda_graph,
+                                          use_cuda_graph=False,
                                           use_flash_attn=not args.no_use_flash_attn)
     tokenizer = LlamaTokenizer.from_pretrained(model_str)
 
