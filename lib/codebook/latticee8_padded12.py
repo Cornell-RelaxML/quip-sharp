@@ -199,6 +199,11 @@ class QuantizedE8P12Linear(nn.Module):
     def __init__(self, device):
         super().__init__()
         self.codebook = E8P12_codebook(build_truncated=False).to(device).to(torch.float16)
+        self.codebook_matvec = torch.zeros((256,), dtype=torch.int64, device=device)
+        for i in range(8):
+            chunk = (self.codebook.grid_abs[:, i] * 4).to(torch.int64)
+            self.codebook_matvec |= chunk << (i * 8)
+
 
     def forward(self,
                 input,
@@ -229,21 +234,12 @@ class QuantizedE8P12Linear(nn.Module):
 
         # TODO: find the optimal threshold
         if x.size(0) < 3:
-            # TODO: hoist this chunk
-            codebook = torch.zeros((256,), dtype=torch.int64, device=self.codebook.grid_abs.device)
-            for i in range(8):
-                chunk = (self.codebook.grid_abs[:, i] * 4).to(torch.int64)
-                codebook |= chunk << (i * 8)
-
-            x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000, codebook).to(torch.float32)
-
+            x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000, self.codebook_matvec).to(torch.float32)
         else:
             W_decompressed = torch.zeros(m, n*_E8P_CODESZ, device=Qidxs.device, dtype=torch.float16)
             quiptools_cuda.decompress_e8p_origorder(
                 Qidxs, self.codebook.grid_abs, self.codebook.grid_abs_even, W_decompressed)
-
-            z = x.to(torch.float16) @ W_decompressed.T
-            x = z.to(torch.float32)
+            x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
 
         x *= Wscale
 
