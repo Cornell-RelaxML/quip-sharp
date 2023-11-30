@@ -1,8 +1,8 @@
 # QuIP#: [QuIP](https://github.com/jerry-chee/QuIP) with Lattice Codebooks
 This repository contains the official code for **QuIP#**, a weights-only quantization method that is able to achieve near fp16 performance using only 2 bits per weight.
 QuIP# combines lattice codebooks with incoherence processing to create state-of-the-art 2 bit quantized models.
-We provide a full suite of 2 bit Llama 1 and 2 models quantized using QuIP#, as well as a full codebase that allows users to quantize and deploy their own models. 
-We also provide CUDA kernels that accelerate inference for QuIP# models.
+We provide a full suite of 2 bit Llama 1 and 2 models quantized using QuIP#, including Llama 2 chat models.
+We also provide a full codebase that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
 
 | Method    | Precision | Wiki $\downarrow$ | C4 $\downarrow$  | ArcE $\uparrow$  | PiQA $\uparrow$  |
 |:---------:|:---------:|:---------:|:---------:|:---------:|:---------:|
@@ -51,35 +51,38 @@ See our blog post for a full set of results.
 To use our models as part of an interactive generation script, run `CUDA_VISIBLE_DEVICES=0 python interactive_gen.py --hf_path <HF version path> --max_length <max generation length>`.
 
 ## Model Zoo
-We provide Llama-1 and Llama-2 quantized models available on Hugging Face.
+We provide Llama 1 and Llama 2 quantized models available on Hugging Face.
 To use them, pass the given Hugging Face repo_id to `--hf_path`.
 We recommend using the `E8P` codebook which quantizes to 2 bits per weight, which gives the best quantization at 2 bits.
 Other options are the `D4` codebook at 2 bits, and the half-integer grid `HI4B1C` codebook at 4 bits.
 See our blogpost for details on the codebooks.
 
 | Lattice Codebook | Base Model  | Weight Bits | Hugging Face repo_id |
-|:----------------:|:-----------:|:-----------:|:----------------:|
-| E8P              | Llama-2-70b | 2           | [`relaxml/Llama-2-70b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8P-2Bit) |
-|                  | Llama-2-13b | 2           | [`relaxml/Llama-2-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8P-2Bit) |
-|                  | Llama-2-7b  | 2           | [`relaxml/Llama-2-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-E8P-2Bit)   |
-|                  | Llama-1-65b | 2           | [`relaxml/Llama-1-65b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-E8P-2Bit) |
-|                  | Llama-1-30b | 2           | [`relaxml/Llama-1-30b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8P-2Bit) |
-|                  | Llama-1-13b | 2           | [`relaxml/Llama-1-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8P-2Bit) |
-|                  | Llama-1-7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
-| D4               | Llama-2-70b | 2           | [`relaxml/Llama-2-70b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-D4-2Bit) |
-|                  | Llama-2-13b | 2           | [`relaxml/Llama-2-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-D4-2Bit) |
-|                  | Llama-2-7b  | 2           | [`relaxml/Llama-2-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-D4-2Bit)   |
-|                  | Llama-1-65b | 2           | [`relaxml/Llama-1-65b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-D4-2Bit) |
-|                  | Llama-1-30b | 2           | [`relaxml/Llama-1-30b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-D4-2Bit) |
-|                  | Llama-1-13b | 2           | [`relaxml/Llama-1-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-D4-2Bit) |
-|                  | Llama-1-7b  | 2           | [`relaxml/Llama-1-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-D4-2Bit)   |
-| HI               | Llama-2-70b | 4           | [`relaxml/Llama-2-70b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-HI-4Bit) |
-|                  | Llama-2-13b | 4           | [`relaxml/Llama-2-13b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-13b-HI-4Bit) |
-|                  | Llama-2-7b  | 4           | [`relaxml/Llama-2-7b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-7b-HI-4Bit)   |
-|                  | Llama-1-65b | 4           | [`relaxml/Llama-1-65b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-65b-HI-4Bit) |
-|                  | Llama-1-30b | 4           | [`relaxml/Llama-1-30b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-30b-HI-4Bit) |
-|                  | Llama-1-13b | 4           | [`relaxml/Llama-1-13b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-13b-HI-4Bit) |
-|                  | Llama-1-7b  | 4           | [`relaxml/Llama-1-7b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-7b-HI-4Bit)   |
+|:----------------:|:-----------|:-----------:|:----------------|
+| E8P              | Llama 2 70b | 2           | [`relaxml/Llama-2-70b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8P-2Bit) |
+|                  | Llama 2 70b chat| 2       | [`relaxml/Llama-2-70b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8P-2Bit) |
+|                  | Llama 2 13b | 2           | [`relaxml/Llama-2-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8P-2Bit) |
+|                  | Llama 2 13b chat| 2       | [`relaxml/Llama-2-13b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-chat-E8P-2Bit) |
+|                  | Llama 2 7b  | 2           | [`relaxml/Llama-2-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-E8P-2Bit)   |
+|                  | Llama 2 7b chat| 2       | [`relaxml/Llama-2-7b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-chat-E8P-2Bit) |
+|                  | Llama 1 65b | 2           | [`relaxml/Llama-1-65b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-E8P-2Bit) |
+|                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8P-2Bit) |
+|                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8P-2Bit) |
+|                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
+| D4               | Llama 2 70b | 2           | [`relaxml/Llama-2-70b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-D4-2Bit) |
+|                  | Llama 2 13b | 2           | [`relaxml/Llama-2-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-D4-2Bit) |
+|                  | Llama 2 7b  | 2           | [`relaxml/Llama-2-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-D4-2Bit)   |
+|                  | Llama 1 65b | 2           | [`relaxml/Llama-1-65b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-D4-2Bit) |
+|                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-D4-2Bit) |
+|                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-D4-2Bit) |
+|                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-D4-2Bit)   |
+| HI               | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-HI-4Bit) |
+|                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-13b-HI-4Bit) |
+|                  | Llama 2 7b  | 4           | [`relaxml/Llama-2-7b-HI-4Bit`](https://huggingface.co/relaxml/Llama-2-7b-HI-4Bit)   |
+|                  | Llama 1 65b | 4           | [`relaxml/Llama-1-65b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-65b-HI-4Bit) |
+|                  | Llama 1 30b | 4           | [`relaxml/Llama-1-30b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-30b-HI-4Bit) |
+|                  | Llama 1 13b | 4           | [`relaxml/Llama-1-13b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-13b-HI-4Bit) |
+|                  | Llama 1 7b  | 4           | [`relaxml/Llama-1-7b-HI-4Bit`](https://huggingface.co/relaxml/Llama-1-7b-HI-4Bit)   |
 
 
 ## CUDA Graphs
