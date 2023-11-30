@@ -93,5 +93,5 @@ Most of our evaluation scripts use the graph wrapper by default unless the `--no
 
 ## Other
 
-Use of Llama models is governed by the Meta license avaiable [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
+Use of Llama models is governed by the Meta license available [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 Use of this code is governed by the GNU GPL v3 license.
