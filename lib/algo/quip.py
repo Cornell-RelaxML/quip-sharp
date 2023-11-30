@@ -186,13 +186,16 @@ def LDLQ_buffered(Wr, Hr, L, D, cb, args, buf_cols=128):
         b_hatWr_T = hatWr_T[cb.codesz * (cur_col - buf_size):cb.codesz * cur_col]
         b_L = L[cb.codesz * (cur_col - buf_size):cb.codesz * cur_col].contiguous()
         b_prod = prod_cache[cb.codesz * (cur_col - buf_size):cb.codesz * cur_col]
+        b_Qidxs_T = Qidxs_T[cur_col - buf_size:cur_col]
         L_offset = cb.codesz * (cur_col - buf_size)
         for i in reversed(range(buf_size)):
             WXWX = b_Wr_T[cb.codesz * i : cb.codesz * (i + 1)] + \
                 b_L[cb.codesz * (i + 1):, L_offset + cb.codesz * i : L_offset + cb.codesz * (i + 1)].T @ \
                 (b_Wr_T[cb.codesz * (i + 1):] - b_hatWr_T[cb.codesz * (i + 1):]) + \
                 b_prod[cb.codesz * i : cb.codesz * (i + 1)]
-            b_hatWr_T[cb.codesz * i:cb.codesz * (i + 1)] = cb.quantize(WXWX.T, return_idx=False).T
+            q_out = cb.quantize(WXWX.T)
+            b_hatWr_T[cb.codesz * i:cb.codesz * (i + 1)] = q_out[0].T
+            b_Qidxs_T[i] = q_out[1]
 
         prod_cache += b_L.T @ (b_Wr_T - b_hatWr_T)
         hatWr_T[cb.codesz * (cur_col - buf_size):cb.codesz * cur_col] = b_hatWr_T
@@ -256,14 +259,14 @@ def LDLQ_buffered_lowmem(Wr, Hr, L, D, cb, args, buf_cols=128):
         b_hatWr = hatWr[:, cb.codesz * (cur_col - buf_size):cb.codesz * cur_col]
         b_L = L[cb.codesz * (cur_col - buf_size):cb.codesz * cur_col]
         b_prod = prod_cache[:, cb.codesz * (cur_col - buf_size):cb.codesz * cur_col]
+        b_Qidxs = Qidxs[:, cur_col - buf_size:cur_col]
         L_offset = cb.codesz * (cur_col - buf_size)
         for i in reversed(range(buf_size)):
             WXWX = b_Wr[:, cb.codesz * i : cb.codesz * (i + 1)] + \
                 (b_Wr[:, cb.codesz * (i + 1):] - b_hatWr[:, cb.codesz * (i + 1):]) @ \
                 b_L[cb.codesz * (i + 1):, L_offset + cb.codesz * i : L_offset + cb.codesz * (i + 1)] + \
                 b_prod[:, cb.codesz * i : cb.codesz * (i + 1)]
-            b_hatWr[:, cb.codesz * i : cb.codesz * (i + 1)] = \
-                cb.quantize(WXWX, False)
+            b_hatWr[:, cb.codesz * i : cb.codesz * (i + 1)], b_Qidxs[:, i] = cb.quantize(WXWX)
         prod_cache += (b_Wr - b_hatWr) @ b_L
 
     del b_Wr, b_hatWr, b_L, b_prod, L_offset, prod_cache

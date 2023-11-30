@@ -36,7 +36,8 @@ def main(args):
         nsamples = input_tok.numel() // args.seqlen
         input_tok = input_tok[0, :(args.seqlen * nsamples)].view(nsamples, args.seqlen)
 
-        model.reset()
+        if not args.no_use_cuda_graph:
+            model.reset()
 
         loss_fct = torch.nn.CrossEntropyLoss().cuda()
         acc_loss = 0.0

@@ -7,7 +7,8 @@ from transformers import LlamaTokenizer
 import random
 import glog
 
-from lib.utils import LMEvalAdaptor, model_from_hf_path
+from lib.utils import LMEvalAdaptor
+from lib.utils.unsafe_import import model_from_hf_path
 from lm_eval import evaluator, tasks
 
 parser = argparse.ArgumentParser()
