@@ -90,3 +90,8 @@ See our blogpost for details on the codebooks.
 We provide a wrapper class that integrates our models with CUDA graphs in `model/graph_wrapper.py`.
 Currently, the torch CUDA graph implementation does not work with Hugging Face's `.generate()` function, but model calls with static input and output sizes can utilize the CUDA graph wrapper for better performance.
 Most of our evaluation scripts use the graph wrapper by default unless the `--no_use_cuda_graph` flag is passed in.
+
+## Other
+
+Use of Llama models is governed by the Meta license avaiable [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
+Use of this code is governed by the GNU GPL v3 license.
