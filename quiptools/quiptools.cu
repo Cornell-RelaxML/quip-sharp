@@ -444,7 +444,7 @@ void decompress_e8p_origorder(
 }
 
 
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 512
 #define WARP_SIZE 32
 
 
@@ -493,53 +493,62 @@ decode_matmul_e8p_kernel(
     int64_t laneId = threadIdx.x % WARP_SIZE;
 
     // each thread adds 8 activation-weight products
-    int64_t warps_per_elem = K / WARP_SIZE / 8;
+    int64_t unroll_pack = 8;
+    int64_t unroll_k = 1;
+    int64_t pack = 8;
+    int64_t elem_per_thread = pack * unroll_k;
+    int64_t warps_per_elem = K / WARP_SIZE / elem_per_thread;
 
     for (int64_t warpPos = blockIdx.x * BLOCK_SIZE/WARP_SIZE + warpId;
             warpPos < M * N * warps_per_elem;
             warpPos += gridDim.x * BLOCK_SIZE/WARP_SIZE) {
-        int64_t m = (warpPos / warps_per_elem) / N;
-        int64_t n = (warpPos / warps_per_elem) % N;
+        int64_t warpId = warpPos % (BLOCK_SIZE / WARP_SIZE);
+
+        int64_t m = (warpPos / warps_per_elem) % M;
+        int64_t n = (warpPos / warps_per_elem) / M;
         int64_t k = warpPos % warps_per_elem;
 
-        // TODO: optimize access pattern by reordering weights
-        const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * 8;
-        uint16_t encoded = weights_compressed[n * K/8 + (k * WARP_SIZE + laneId)];
-        uint64_t decoded = decode8weights(encoded, codebook_abs);
-
-        scalar_t accumulator = 0;
-        if constexpr (std::is_same<scalar_t, float>::value) {
-            const float4 *first_half = reinterpret_cast<const float4 *>(activations);
-            accumulator += first_half->x * static_cast<int8_t>(decoded >> 0);
-            accumulator += first_half->y * static_cast<int8_t>(decoded >> 8);
-            accumulator += first_half->z * static_cast<int8_t>(decoded >> 16);
-            accumulator += first_half->w * static_cast<int8_t>(decoded >> 24);
-            const float4 *second_half = reinterpret_cast<const float4 *>(activations + 4);
-            accumulator += second_half->x * static_cast<int8_t>(decoded >> 32);
-            accumulator += second_half->y * static_cast<int8_t>(decoded >> 40);
-            accumulator += second_half->z * static_cast<int8_t>(decoded >> 48);
-            accumulator += second_half->w * static_cast<int8_t>(decoded >> 56);
-        } else {
 #pragma unroll
-            for (int64_t i = 0; i < 8; i += 1) {
-                int8_t weight = decoded >> (i * 8);
-                accumulator += activations[i] * weight;
-            }
-        }
-        accumulator *= 0.25;
+        for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
+            // TODO: optimize access pattern by reordering weights
+            const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
+            uint16_t encoded = weights_compressed[n * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
+            uint64_t decoded = decode8weights(encoded, codebook_abs);
 
-        for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
-            // apparently c10::Half does arithmetic operations in float32?
-            // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
-            if constexpr (std::is_same<scalar_t, c10::Half>::value) {
-                accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
+            scalar_t accumulator = 0;
+            if constexpr (std::is_same<scalar_t, float>::value) {
+                const float4 *first_half = reinterpret_cast<const float4 *>(activations);
+                accumulator += first_half->x * static_cast<int8_t>(decoded >> 0);
+                accumulator += first_half->y * static_cast<int8_t>(decoded >> 8);
+                accumulator += first_half->z * static_cast<int8_t>(decoded >> 16);
+                accumulator += first_half->w * static_cast<int8_t>(decoded >> 24);
+                const float4 *second_half = reinterpret_cast<const float4 *>(activations + 4);
+                accumulator += second_half->x * static_cast<int8_t>(decoded >> 32);
+                accumulator += second_half->y * static_cast<int8_t>(decoded >> 40);
+                accumulator += second_half->z * static_cast<int8_t>(decoded >> 48);
+                accumulator += second_half->w * static_cast<int8_t>(decoded >> 56);
             } else {
-                accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
+#pragma unroll
+                for (int64_t i = 0; i < 8; i += 1) {
+                    int8_t weight = decoded >> (i * 8);
+                    accumulator += activations[i] * weight;
+                }
             }
-        }
+            accumulator *= 0.25;
 
-        if (laneId == 0) {
-            atomicAdd(output + m * N + n, accumulator);
+            for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
+                // apparently c10::Half does arithmetic operations in float32?
+                // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
+                if constexpr (std::is_same<scalar_t, c10::Half>::value) {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
+                } else {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
+                }
+            }
+
+            if (laneId == 0) {
+                atomicAdd(output + m * N + n, accumulator);
+            }
         }
     }
 }
@@ -563,6 +572,7 @@ __host__ extern torch::Tensor decode_matmul_e8p(
     int64_t M = x.size(-2);
     int64_t N = weights_compressed.size(-2);
     int64_t K = x.size(-1);
+    //printf("%lld %lld %lld\n", M, N, K);
 
     TORCH_CHECK(K % WARP_SIZE == 0, "K is not divisible by WARP_SIZE");
 
@@ -576,7 +586,7 @@ __host__ extern torch::Tensor decode_matmul_e8p(
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, x.get_device());
-    int64_t grid_size = static_cast<int64_t>(2 * deviceProp.multiProcessorCount);
+    int64_t grid_size = static_cast<int64_t>(3 * deviceProp.multiProcessorCount);
     at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
     AT_DISPATCH_FLOATING_TYPES_AND2(
