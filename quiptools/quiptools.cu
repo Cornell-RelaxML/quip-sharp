@@ -444,7 +444,7 @@ void decompress_e8p_origorder(
 }
 
 
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 512
 #define WARP_SIZE 32
 
 
@@ -476,6 +476,14 @@ __device__ static inline uint64_t decode8weights(
 }
 
 
+/*
+llama 2 70B:
+M N K
+1 8192 8192
+1 57344 8192
+1 8192 28672
+1 10240 8192
+*/
 template <typename scalar_t>
 __global__ static void
 __launch_bounds__(BLOCK_SIZE)
@@ -488,58 +496,100 @@ decode_matmul_e8p_kernel(
     int64_t N,
     int64_t K
 ) {
+    __shared__ int64_t codebook_local[256];
+    if (threadIdx.x < 256) {
+    codebook_local[threadIdx.x] = codebook_abs[threadIdx.x];
+    }
+    __syncthreads();
 
     int64_t warpId = threadIdx.x / WARP_SIZE;
     int64_t laneId = threadIdx.x % WARP_SIZE;
 
     // each thread adds 8 activation-weight products
-    int64_t warps_per_elem = K / WARP_SIZE / 8;
+    int64_t unroll_k = 2;
+    int64_t pack = 8;
+    int64_t elem_per_thread = pack * unroll_k;
+    int64_t warps_per_elem = K / WARP_SIZE / elem_per_thread;
+    int64_t unroll_n = 16;
+    int64_t local_k = 1; // in terms of warp size. 32 threads of elem_per_thread fma each, dont set below 1 because of __shfl_down_sync
+    int64_t local_n = BLOCK_SIZE / WARP_SIZE / local_k;
+    int64_t grid_N = N / unroll_n;
+
+    __shared__ scalar_t accum_scratch[BLOCK_SIZE / WARP_SIZE];
+    bool SHARED_REDUCE = false;
 
     for (int64_t warpPos = blockIdx.x * BLOCK_SIZE/WARP_SIZE + warpId;
-            warpPos < M * N * warps_per_elem;
+            warpPos < M * grid_N * warps_per_elem;
             warpPos += gridDim.x * BLOCK_SIZE/WARP_SIZE) {
-        int64_t m = (warpPos / warps_per_elem) / N;
-        int64_t n = (warpPos / warps_per_elem) % N;
-        int64_t k = warpPos % warps_per_elem;
 
-        // TODO: optimize access pattern by reordering weights
-        const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * 8;
-        uint16_t encoded = weights_compressed[n * K/8 + (k * WARP_SIZE + laneId)];
-        uint64_t decoded = decode8weights(encoded, codebook_abs);
+        int64_t local_n_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) / local_k;
+        int64_t local_k_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) % local_k;
+        int64_t m = (warpPos / warps_per_elem) / (grid_N);
+        int64_t k_ = warpPos % (warps_per_elem * local_n);
+        int64_t k = k_ / (local_k * local_n) * local_k + k_ % local_k;
 
-        scalar_t accumulator = 0;
-        if constexpr (std::is_same<scalar_t, float>::value) {
-            const float4 *first_half = reinterpret_cast<const float4 *>(activations);
-            accumulator += first_half->x * static_cast<int8_t>(decoded >> 0);
-            accumulator += first_half->y * static_cast<int8_t>(decoded >> 8);
-            accumulator += first_half->z * static_cast<int8_t>(decoded >> 16);
-            accumulator += first_half->w * static_cast<int8_t>(decoded >> 24);
-            const float4 *second_half = reinterpret_cast<const float4 *>(activations + 4);
-            accumulator += second_half->x * static_cast<int8_t>(decoded >> 32);
-            accumulator += second_half->y * static_cast<int8_t>(decoded >> 40);
-            accumulator += second_half->z * static_cast<int8_t>(decoded >> 48);
-            accumulator += second_half->w * static_cast<int8_t>(decoded >> 56);
-        } else {
 #pragma unroll
-            for (int64_t i = 0; i < 8; i += 1) {
-                int8_t weight = decoded >> (i * 8);
-                accumulator += activations[i] * weight;
-            }
-        }
-        accumulator *= 0.25;
+        for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
+            scalar_t accumulator = 0;
+            int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
+            __syncwarp();
+#pragma unroll
+            for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
+                // TODO: optimize access pattern by reordering weights
+                const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
+                uint16_t encoded = weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
+                uint64_t decoded = decode8weights(encoded, codebook_local);
 
-        for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
-            // apparently c10::Half does arithmetic operations in float32?
-            // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
-            if constexpr (std::is_same<scalar_t, c10::Half>::value) {
-                accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
+                if constexpr (std::is_same<scalar_t, float>::value) {
+                    const float4 *first_half = reinterpret_cast<const float4 *>(activations);
+                    accumulator += first_half->x * static_cast<int8_t>(decoded >> 0);
+                    accumulator += first_half->y * static_cast<int8_t>(decoded >> 8);
+                    accumulator += first_half->z * static_cast<int8_t>(decoded >> 16);
+                    accumulator += first_half->w * static_cast<int8_t>(decoded >> 24);
+                    const float4 *second_half = reinterpret_cast<const float4 *>(activations + 4);
+                    accumulator += second_half->x * static_cast<int8_t>(decoded >> 32);
+                    accumulator += second_half->y * static_cast<int8_t>(decoded >> 40);
+                    accumulator += second_half->z * static_cast<int8_t>(decoded >> 48);
+                    accumulator += second_half->w * static_cast<int8_t>(decoded >> 56);
+                } else {
+#pragma unroll
+                    for (int64_t i = 0; i < 8; i += 1) {
+                        int8_t weight = decoded >> (i * 8);
+                        accumulator += activations[i] * weight;
+                    }
+                }
+            }
+            accumulator *= 0.25;
+
+            for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
+                // apparently c10::Half does arithmetic operations in float32?
+                // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
+                if constexpr (std::is_same<scalar_t, c10::Half>::value) {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
+                } else {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
+                }
+            }
+
+            if (SHARED_REDUCE) {
+                if (laneId == 0) {
+                    accum_scratch[warpId] = accumulator;
+                    __syncthreads();
+                    if (warpId % local_k == 0) {
+                        scalar_t local_accum = 0;
+                        for (int64_t accum_i = 0; accum_i < local_k; accum_i++) {
+                            local_accum += accum_scratch[warpId / local_k * local_k + accum_i];
+                        }
+                        atomicAdd(output + m * N + n * unroll_n + unroll_n_i, local_accum);
+                    }
+                } else {
+                    __syncthreads();
+                }
             } else {
-                accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
+                if (laneId == 0) {
+                    atomicAdd(output + m * N + n * unroll_n + unroll_n_i, accumulator);
+                }
             }
-        }
-
-        if (laneId == 0) {
-            atomicAdd(output + m * N + n, accumulator);
         }
     }
 }
@@ -563,6 +613,7 @@ __host__ extern torch::Tensor decode_matmul_e8p(
     int64_t M = x.size(-2);
     int64_t N = weights_compressed.size(-2);
     int64_t K = x.size(-1);
+    //printf("%lld %lld %lld\n", M, N, K);
 
     TORCH_CHECK(K % WARP_SIZE == 0, "K is not divisible by WARP_SIZE");
 
@@ -576,7 +627,7 @@ __host__ extern torch::Tensor decode_matmul_e8p(
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, x.get_device());
-    int64_t grid_size = static_cast<int64_t>(2 * deviceProp.multiProcessorCount);
+    int64_t grid_size = static_cast<int64_t>(6 * deviceProp.multiProcessorCount);
     at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
     AT_DISPATCH_FLOATING_TYPES_AND2(
