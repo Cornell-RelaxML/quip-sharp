@@ -499,6 +499,8 @@ decode_matmul_e8p_kernel(
     int64_t elem_per_thread = pack * unroll_k;
     int64_t warps_per_elem = K / WARP_SIZE / elem_per_thread;
     int64_t unroll_n = 16;
+    int64_t local_k = 1; // in terms of warp size. 32 threads of elem_per_thread fma each, dont set below 1 because of __shfl_down_sync
+    int64_t local_n = BLOCK_SIZE / WARP_SIZE / local_k;
     int64_t grid_N = N / unroll_n;
 
     for (int64_t warpPos = blockIdx.x * BLOCK_SIZE/WARP_SIZE + warpId;
@@ -506,17 +508,20 @@ decode_matmul_e8p_kernel(
             warpPos += gridDim.x * BLOCK_SIZE/WARP_SIZE) {
         int64_t warpId = warpPos % (BLOCK_SIZE / WARP_SIZE);
 
-        int64_t m = (warpPos / warps_per_elem) % M;
-        int64_t n = (warpPos / warps_per_elem) / M * unroll_n;
-        int64_t k = warpPos % warps_per_elem;
+        int64_t local_n_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) / local_k;
+        int64_t local_k_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) % local_k;
+        int64_t m = (warpPos / warps_per_elem) / (grid_N);
+        int64_t k_ = warpPos % (warps_per_elem * local_n);
+        int64_t k = k_ / (local_k * local_n) * local_k + k_ % local_k;
 
 #pragma unroll
         for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
 #pragma unroll
             for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
+                int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
                 // TODO: optimize access pattern by reordering weights
                 const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
-                uint16_t encoded = weights_compressed[(n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
+                uint16_t encoded = weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
                 uint64_t decoded = decode8weights(encoded, codebook_abs);
 
                 scalar_t accumulator = 0;
@@ -551,7 +556,7 @@ decode_matmul_e8p_kernel(
                 }
 
                 if (laneId == 0) {
-                    atomicAdd(output + m * N + (n + unroll_n_i), accumulator);
+                    atomicAdd(output + m * N + n * unroll_n + unroll_n_i, accumulator);
                 }
             }
         }
