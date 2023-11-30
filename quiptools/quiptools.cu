@@ -501,7 +501,6 @@ decode_matmul_e8p_kernel(
     int64_t laneId = threadIdx.x % WARP_SIZE;
 
     // each thread adds 8 activation-weight products
-    int64_t unroll_pack = 8;
     int64_t unroll_k = 2;
     int64_t pack = 8;
     int64_t elem_per_thread = pack * unroll_k;
@@ -511,10 +510,12 @@ decode_matmul_e8p_kernel(
     int64_t local_n = BLOCK_SIZE / WARP_SIZE / local_k;
     int64_t grid_N = N / unroll_n;
 
+    __shared__ scalar_t accum_scratch[BLOCK_SIZE / WARP_SIZE];
+    bool SHARED_REDUCE = false;
+
     for (int64_t warpPos = blockIdx.x * BLOCK_SIZE/WARP_SIZE + warpId;
             warpPos < M * grid_N * warps_per_elem;
             warpPos += gridDim.x * BLOCK_SIZE/WARP_SIZE) {
-        int64_t warpId = warpPos % (BLOCK_SIZE / WARP_SIZE);
 
         int64_t local_n_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) / local_k;
         int64_t local_k_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) % local_k;
@@ -524,15 +525,15 @@ decode_matmul_e8p_kernel(
 
 #pragma unroll
         for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
+            scalar_t accumulator = 0;
+            int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
 #pragma unroll
             for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
-                int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
                 // TODO: optimize access pattern by reordering weights
                 const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
                 uint16_t encoded = weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
                 uint64_t decoded = decode8weights(encoded, codebook_abs);
 
-                scalar_t accumulator = 0;
                 if constexpr (std::is_same<scalar_t, float>::value) {
                     const float4 *first_half = reinterpret_cast<const float4 *>(activations);
                     accumulator += first_half->x * static_cast<int8_t>(decoded >> 0);
@@ -551,18 +552,34 @@ decode_matmul_e8p_kernel(
                         accumulator += activations[i] * weight;
                     }
                 }
-                accumulator *= 0.25;
+            }
+            accumulator *= 0.25;
 
-                for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
-                    // apparently c10::Half does arithmetic operations in float32?
-                    // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
-                    if constexpr (std::is_same<scalar_t, c10::Half>::value) {
-                        accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
-                    } else {
-                        accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
-                    }
+            for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
+                // apparently c10::Half does arithmetic operations in float32?
+                // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
+                if constexpr (std::is_same<scalar_t, c10::Half>::value) {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
+                } else {
+                    accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
                 }
+            }
 
+            if (SHARED_REDUCE) {
+                if (laneId == 0) {
+                    accum_scratch[warpId] = accumulator;
+                    __syncthreads();
+                    if (warpId % local_k == 0) {
+                        scalar_t local_accum = 0;
+                        for (int64_t accum_i = 0; accum_i < local_k; accum_i++) {
+                            local_accum += accum_scratch[warpId / local_k * local_k + accum_i];
+                        }
+                        atomicAdd(output + m * N + n * unroll_n + unroll_n_i, local_accum);
+                    }
+                } else {
+                    __syncthreads();
+                }
+            } else {
                 if (laneId == 0) {
                     atomicAdd(output + m * N + n * unroll_n + unroll_n_i, accumulator);
                 }
