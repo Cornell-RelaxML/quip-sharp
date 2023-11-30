@@ -476,6 +476,14 @@ __device__ static inline uint64_t decode8weights(
 }
 
 
+/*
+llama 2 70B:
+M N K
+1 8192 8192
+1 57344 8192
+1 8192 28672
+1 10240 8192
+*/
 template <typename scalar_t>
 __global__ static void
 __launch_bounds__(BLOCK_SIZE)
@@ -494,7 +502,7 @@ decode_matmul_e8p_kernel(
 
     // each thread adds 8 activation-weight products
     int64_t unroll_pack = 8;
-    int64_t unroll_k = 1;
+    int64_t unroll_k = 2;
     int64_t pack = 8;
     int64_t elem_per_thread = pack * unroll_k;
     int64_t warps_per_elem = K / WARP_SIZE / elem_per_thread;
@@ -515,9 +523,9 @@ decode_matmul_e8p_kernel(
         int64_t k = k_ / (local_k * local_n) * local_k + k_ % local_k;
 
 #pragma unroll
-        for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
+        for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
 #pragma unroll
-            for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
+            for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
                 int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
                 // TODO: optimize access pattern by reordering weights
                 const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
@@ -596,7 +604,7 @@ __host__ extern torch::Tensor decode_matmul_e8p(
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, x.get_device());
-    int64_t grid_size = static_cast<int64_t>(3 * deviceProp.multiProcessorCount);
+    int64_t grid_size = static_cast<int64_t>(6 * deviceProp.multiProcessorCount);
     at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
     AT_DISPATCH_FLOATING_TYPES_AND2(
