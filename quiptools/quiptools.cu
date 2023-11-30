@@ -496,6 +496,11 @@ decode_matmul_e8p_kernel(
     int64_t N,
     int64_t K
 ) {
+    __shared__ int64_t codebook_local[256];
+    if (threadIdx.x < 256) {
+    codebook_local[threadIdx.x] = codebook_abs[threadIdx.x];
+    }
+    __syncthreads();
 
     int64_t warpId = threadIdx.x / WARP_SIZE;
     int64_t laneId = threadIdx.x % WARP_SIZE;
@@ -527,12 +532,13 @@ decode_matmul_e8p_kernel(
         for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
             scalar_t accumulator = 0;
             int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
+            __syncwarp();
 #pragma unroll
             for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
                 // TODO: optimize access pattern by reordering weights
                 const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
                 uint16_t encoded = weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
-                uint64_t decoded = decode8weights(encoded, codebook_abs);
+                uint64_t decoded = decode8weights(encoded, codebook_local);
 
                 if constexpr (std::is_same<scalar_t, float>::value) {
                     const float4 *first_half = reinterpret_cast<const float4 *>(activations);
