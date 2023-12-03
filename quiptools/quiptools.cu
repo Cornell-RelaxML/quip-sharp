@@ -41,6 +41,7 @@ __host__ static inline void gpuAssert(cudaError_t code, const char *file, int li
 }
 
 
+
 __global__ void cuda_lookupmatmul_d4_k8_kernel(
     const c10::Half* __restrict__ X,      // k x n
     const uint8_t* __restrict__ YIs,      // m x (n/4)
@@ -648,4 +649,59 @@ __host__ extern torch::Tensor decode_matmul_e8p(
     });
 
     return output;
+}
+
+
+
+
+// This is a terrible kernel, only use this to not call the pytorch version
+
+#define DECOMPRESS_HI4B1C_BLOCK_SIZE 128
+
+__global__ void cuda_decompress_hi4b1c_packed_kernel(
+    const int32_t* __restrict__ YIs,     // m x (n/8)
+    const c10::Half* __restrict__ CB,     // 16 x 1
+    c10::Half* __restrict__ Y             // m x n
+) {
+  const long i = threadIdx.x + DECOMPRESS_HI4B1C_BLOCK_SIZE * blockIdx.x;
+
+  // 0 2 4 6 1 3 5 7
+  uint32_t packed = YIs[i];
+  Y[i*8 + 7] = CB[packed & 15];
+  Y[i*8 + 5] = CB[(packed >> 4) & 15];
+  Y[i*8 + 3] = CB[(packed >> 8) & 15];
+  Y[i*8 + 1] = CB[(packed >> 12) & 15];
+  Y[i*8 + 6] = CB[(packed >> 16) & 15];
+  Y[i*8 + 4] = CB[(packed >> 20) & 15];
+  Y[i*8 + 2] = CB[(packed >> 24) & 15];
+  Y[i*8 + 0] = CB[(packed >> 28) & 15];
+}
+
+
+void decompress_hi4b1c_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,
+    torch::Tensor &Y         // m x n
+) {
+  size_t m = Y.sizes()[0];
+  size_t n = Y.sizes()[1];
+
+  assert(YIs.is_contiguous());
+  assert(Y.is_contiguous());
+
+  assert(YIs.sizes()[0] == m);
+  assert(YIs.sizes()[1] * 8 == n);
+
+  assert(CB.sizes()[0] == 16);
+  assert(CB.sizes()[1] == 1);
+
+  
+  const dim3 threads(DECOMPRESS_HI4B1C_BLOCK_SIZE);
+  const dim3 blocks(m*n/(8*DECOMPRESS_HI4B1C_BLOCK_SIZE));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cuda_decompress_hi4b1c_packed_kernel<<<blocks, threads, 0, stream>>>(
+    YIs.data_ptr<int32_t>(),
+    CB.data_ptr<c10::Half>(),
+    Y.data_ptr<c10::Half>()
+  );
 }

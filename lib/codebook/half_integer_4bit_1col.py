@@ -115,7 +115,12 @@ class QuantizedHI4B1CLinear(nn.Module):
         x = x / num_scale
         x = x.to(torch.float16)
 
-        W_decompressed = self.codebook.by_idxs(Qidxs, packed=packed).reshape(-1, n)
+        if packed:
+            W_decompressed = torch.zeros(m, n, dtype=torch.float16, device=x.device)
+            quiptools_cuda.decompress_hi4b1c_packed(Qidxs, self.codebook.grid, W_decompressed)
+        else:
+            W_decompressed = self.codebook.by_idxs(Qidxs, packed=False).reshape(-1, n)
+        
         z = x @ W_decompressed.t()
 
         x = z.to(torch.float32)
