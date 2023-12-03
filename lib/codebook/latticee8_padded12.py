@@ -237,7 +237,7 @@ class QuantizedE8P12Linear(nn.Module):
             ABx = Bx @ A.t().to(torch.float32)
 
         # TODO: find the optimal threshold
-        if x.size(0) < 8:
+        if x.size(0) < 6:
             x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000, self.codebook_matvec).to(torch.float32)
         else:
             W_decompressed = torch.zeros(m, n*_E8P_CODESZ, device=Qidxs.device, dtype=torch.float16)
