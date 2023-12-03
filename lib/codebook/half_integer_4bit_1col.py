@@ -4,8 +4,6 @@ import quiptools_cuda
 
 from lib.utils.matmul_had import matmul_hadU_cuda, matmul_hadUt_cuda
 
-_HI4B1C_CODESZ = 1
-
 
 def get_grid():
     hintr = torch.arange(-8, 8) + 1 / 2
@@ -21,8 +19,9 @@ class HI4B1C_codebook(nn.Module):
     def __init__(self, build_truncated=True):
         super(HI4B1C_codebook, self).__init__()
         self.opt_scale = 2.97
-        self.codesz = _HI4B1C_CODESZ
-        self.idx_dtype = torch.uint8
+        self.codesz = 1
+        self.idx_dtype = torch.int32
+        self.packsz = 8
 
         grid = _HI4B1C_CACHED
         self.register_buffer('grid', grid)
@@ -51,7 +50,29 @@ class HI4B1C_codebook(nn.Module):
             return vals
         return vals, idx.to(self.idx_dtype)
 
-    def by_idxs(self, idxs):
+    def maybe_pack_idxs(self, idxs):
+        return \
+            (idxs[:, 0::self.packsz] << 4*7) + \
+            (idxs[:, 2::self.packsz] << 4*6) + \
+            (idxs[:, 4::self.packsz] << 4*5) + \
+            (idxs[:, 6::self.packsz] << 4*4) + \
+            (idxs[:, 1::self.packsz] << 4*3) + \
+            (idxs[:, 3::self.packsz] << 4*2) + \
+            (idxs[:, 5::self.packsz] << 4*1) + \
+            idxs[:, 7::self.packsz]
+    
+    def by_idxs(self, idxs, packed=False):
+        if packed:
+            idxs = idxs.repeat_interleave(self.packsz, dim=-1)
+            idxs[:, 0::self.packsz] = (idxs[:, 0::self.packsz] >> 28) & 15
+            idxs[:, 2::self.packsz] = (idxs[:, 2::self.packsz] >> 24) & 15
+            idxs[:, 4::self.packsz] = (idxs[:, 4::self.packsz] >> 20) & 15
+            idxs[:, 6::self.packsz] = (idxs[:, 6::self.packsz] >> 16) & 15
+            idxs[:, 1::self.packsz] = (idxs[:, 1::self.packsz] >> 12) & 15
+            idxs[:, 3::self.packsz] = (idxs[:, 3::self.packsz] >> 8) & 15
+            idxs[:, 5::self.packsz] = (idxs[:, 5::self.packsz] >> 4) & 15
+            idxs[:, 7::self.packsz] = idxs[:, 7::self.packsz] & 15
+
         return self.grid[idxs.int()]
 
 
@@ -76,10 +97,11 @@ class QuantizedHI4B1CLinear(nn.Module):
                 A=None,
                 B=None,
                 rescale_WH=False,
-                scaleWH=None):
-        (m, n) = Qidxs.shape
+                scaleWH=None,
+                packed=False):
+        n, m = len(SU), len(SV)
 
-        x = input.view(-1, n * _HI4B1C_CODESZ).to(torch.float32)
+        x = input.view(-1, n).to(torch.float32)
         if rescale_WH:
             x /= scaleWH
         x = x * SU
@@ -93,7 +115,7 @@ class QuantizedHI4B1CLinear(nn.Module):
         x = x / num_scale
         x = x.to(torch.float16)
 
-        W_decompressed = self.codebook.by_idxs(Qidxs).reshape(-1, n * _HI4B1C_CODESZ)
+        W_decompressed = self.codebook.by_idxs(Qidxs, packed=packed).reshape(-1, n)
         z = x @ W_decompressed.t()
 
         x = z.to(torch.float32)

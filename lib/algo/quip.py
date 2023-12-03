@@ -386,7 +386,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         hatWr, Qidxs = LDLQ_buffered_lowmem(Wr, Hr, L, D, codebook, args, buf_cols=128)
     else:
         hatWr, Qidxs = LDLQ_buffered(Wr, Hr, L, D, codebook, args, buf_cols=128)
-
+        
     hatWr = hatWr * Wscale
 
     # low rank correction
@@ -399,6 +399,8 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
 
     # reverse incoherence process
     hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+
+    Qidxs = codebook.maybe_pack_idxs(Qidxs)
 
     attr = {
         'Qidxs': Qidxs.to(orig_device),

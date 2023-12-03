@@ -9,7 +9,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 import numpy
 import torch
-from transformers import LlamaTokenizer, LlamaForCausalLM, PreTrainedTokenizerFast
+from transformers import AutoTokenizer, AutoModelForCausalLM, PreTrainedTokenizerFast
 from datasets import load_dataset
 
 import torch.multiprocessing as mp
@@ -29,6 +29,7 @@ parser.add_argument('--chunk_size', default=256, type=int)
 parser.add_argument('--async_copy_speed', default=-1, type=int)
 parser.add_argument('--act_save_rate', default=4, type=int)
 parser.add_argument('--save_activations', action='store_true')
+parser.add_argument('--sample_proc', default=4, type=int)
 
 
 def move_fn(in_q, async_copy_speed):
@@ -114,11 +115,11 @@ def accumulate(in_q, move_q, ngpus, args, transformer_layer_index):
 
 def main(args):
     print("loading model...")
-    model = LlamaForCausalLM.from_pretrained(args.base_model,
-                                             torch_dtype="auto",
-                                             low_cpu_mem_usage=True)
+    model = AutoModelForCausalLM.from_pretrained(args.base_model,
+                                                 torch_dtype="auto",
+                                                 low_cpu_mem_usage=True)
     print("loaded model!")
-    tokenizer = LlamaTokenizer.from_pretrained(args.base_model, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
 
     if os.path.isfile(f"{args.save_path}/dev_activations.pt"):
@@ -130,7 +131,11 @@ def main(args):
     else:
         print("loading dataset...")
         dataset = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train")
-        devset = utils.sample_devset(dataset, tokenizer, args.devset_size, args.ctx_size)
+        devset = utils.sample_devset(dataset,
+                                     tokenizer,
+                                     args.devset_size,
+                                     args.ctx_size,
+                                     nproc=args.sample_proc)
         dev_emb = model.model.embed_tokens(devset)
         after_layer = -1
         print("loaded dataset!")
@@ -140,9 +145,18 @@ def main(args):
 
     position_ids = torch.arange(args.ctx_size, dtype=torch.int64)[None, :] + \
         torch.zeros(args.batch_size, args.ctx_size, dtype=torch.int64)
-    attention_mask = model.model._prepare_decoder_attention_mask(
-        torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
-        (args.batch_size, args.ctx_size), dev_emb[0:args.batch_size, :, :], 0)
+    if hasattr(model.config, 'sliding_window'):
+        # mistral models
+        attention_mask = model.model._prepare_decoder_attention_mask(
+            torch.ones(args.batch_size, args.ctx_size,
+                       dtype=torch.bool), (args.batch_size, args.ctx_size),
+            dev_emb[0:args.batch_size, :, :],
+            0,
+            sliding_window=model.config.sliding_window)
+    else:
+        attention_mask = model.model._prepare_decoder_attention_mask(
+            torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
+            (args.batch_size, args.ctx_size), dev_emb[0:args.batch_size, :, :], 0)
 
     if args.scratch_path is not None:
         move_q = mp.Queue()

@@ -123,6 +123,7 @@ class D4_codebook(nn.Module):
         self.codesz = _D4_CODESZ
         self.opt_scale = 1.21
         self.idx_dtype = torch.uint8
+        self.packsz = 1
 
     def _quantize_noscale(self, X, return_idx=True):
         Xqidx = (2 * X @ self.grid.T - self.grid_norm).argmax(1)
@@ -134,7 +135,10 @@ class D4_codebook(nn.Module):
         assert X.shape[-1] == self.codesz
         return self._quantize_noscale(X, return_idx=return_idx)
 
-    def by_idxs(self, idxs):
+    def maybe_pack_idxs(self, idxs):
+        return idxs
+    
+    def by_idxs(self, idxs, **kwargs):
         return self.grid[idxs.int()]
 
 
@@ -142,7 +146,7 @@ class QuantizedD4Linear(nn.Module):
 
     def __init__(self, device):
         super().__init__()
-        self.D4_CB = build_D4_CB().to(device).to(torch.float16)
+        self.codebook = D4_codebook().to(device).to(torch.float16)
 
     def forward(self,
                 input,
@@ -158,7 +162,8 @@ class QuantizedD4Linear(nn.Module):
                 A=None,
                 B=None,
                 rescale_WH=False,
-                scaleWH=None):
+                scaleWH=None,
+                **kwargs):
         (m, n) = Qidxs.shape
 
         x = input.view(-1, _D4_CODESZ * n).to(torch.float32)
@@ -179,7 +184,7 @@ class QuantizedD4Linear(nn.Module):
                 x_padded = torch.zeros(8, n * _D4_CODESZ, dtype=torch.float16, device=x.device)
                 x_padded[0:(x.shape[0]), :] = x
             z = torch.zeros(8, m, dtype=x.dtype, device=x.device)
-            quiptools_cuda.lookupmatmul_d4_k8(x_padded, Qidxs, self.D4_CB, z)
+            quiptools_cuda.lookupmatmul_d4_k8(x_padded, Qidxs, self.codebook.grid, z)
             z = z[0:(x.shape[0]), :]
         elif (x.shape[0] <= 16):
             if (x.shape[0] == 16):
@@ -188,7 +193,7 @@ class QuantizedD4Linear(nn.Module):
                 x_padded = torch.zeros(16, n * _D4_CODESZ, dtype=torch.float16, device=x.device)
                 x_padded[0:(x.shape[0]), :] = x
             z = torch.zeros(16, m, dtype=x.dtype, device=x.device)
-            quiptools_cuda.lookupmatmul_d4_k16(x_padded, Qidxs, self.D4_CB, z)
+            quiptools_cuda.lookupmatmul_d4_k16(x_padded, Qidxs, self.codebook.grid, z)
             z = z[0:(x.shape[0]), :]
         elif (x.shape[0] <= 32):
             if (x.shape[0] == 32):
@@ -197,12 +202,12 @@ class QuantizedD4Linear(nn.Module):
                 x_padded = torch.zeros(32, n * _D4_CODESZ, dtype=torch.float16, device=x.device)
                 x_padded[0:(x.shape[0]), :] = x
             z = torch.zeros(32, m, dtype=x.dtype, device=x.device)
-            quiptools_cuda.lookupmatmul_d4_k32(x_padded, Qidxs, self.D4_CB, z)
+            quiptools_cuda.lookupmatmul_d4_k32(x_padded, Qidxs, self.codebook.grid, z)
             z = z[0:(x.shape[0]), :]
         else:
             # manifest the matrix
             W_decompressed = torch.zeros(m, n * _D4_CODESZ, dtype=torch.float16, device=x.device)
-            quiptools_cuda.decompress_d4(Qidxs, self.D4_CB, W_decompressed)
+            quiptools_cuda.decompress_d4(Qidxs, self.codebook.grid, W_decompressed)
             z = x @ W_decompressed.t()
 
         x = z.to(torch.float32) * (Wscale * 1024)
