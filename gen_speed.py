@@ -14,7 +14,6 @@ parser.add_argument('--hf_path', default='meta-llama/Llama-2-70b-hf', type=str)
 parser.add_argument('--batch_size', default=1, type=int)
 parser.add_argument('--seqlen', default=1, type=int)
 parser.add_argument('--samples', default=100, type=int)
-parser.add_argument('--max_tokens', default=400, type=int)
 parser.add_argument('--no_use_cuda_graph', action='store_true')
 parser.add_argument('--no_use_flash_attn', action='store_true')
 
