@@ -12,7 +12,7 @@ os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
 import torch
 import torch.multiprocessing as mp
 from torch import nn, optim
-from transformers import LlamaTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 
 from lib import codebook, utils
@@ -26,15 +26,15 @@ parser.add_argument('--num_cpu_threads', default=8, type=int)
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--devset_size', default=64, type=int)
 parser.add_argument('--ctx_size', default=2048, type=int)
-parser.add_argument('--save_path', type=str)
-parser.add_argument('--hessian_path', type=str)
-parser.add_argument('--base_model', type=str)
+parser.add_argument('--save_path', default='checkpoints/quantized-hada-70b', type=str)
+parser.add_argument('--hessian_path', default='/share/desa/nfs01/quip_llama2/hessians', type=str)
+parser.add_argument('--base_model', default='meta-llama/Llama-2-70b-hf', type=str)
 parser.add_argument('--sigma_reg', default=1e-2, type=float)
 parser.add_argument('--sigma_reg2', default=1e-2, type=float)
 parser.add_argument('--incoh_mode', default='had', type=str, choices=['had', 'kron'])
 parser.add_argument('--lora_rank', default=0, type=int, help='if <=0 then turned off')
 parser.add_argument('--scale_override', default=-1, type=float)
-parser.add_argument('--codebook', default='E8P12', type=str)
+parser.add_argument('--codebook', default='D4', type=str)
 parser.add_argument('--quip_tune_iters', default=10, type=int)
 parser.add_argument('--remove_mean', action='store_true')
 parser.add_argument('--outlier_channel_split', action='store_true')
@@ -262,9 +262,9 @@ def main(args):
 
     cb = codebook.get_codebook(args.codebook)
 
-    model = LlamaForCausalLM.from_pretrained(args.base_model,
-                                             torch_dtype='auto',
-                                             low_cpu_mem_usage=True)
+    model = AutoModelForCausalLM.from_pretrained(args.base_model,
+                                                 torch_dtype='auto',
+                                                 low_cpu_mem_usage=True)
 
     # save configs
     all_config = {'quant_args': args, 'model_config': model.config}
@@ -276,13 +276,15 @@ def main(args):
             'codebook': args.codebook,
             'codesz': cb.codesz,
             'idx_dtype': str(cb.idx_dtype),
+            'fused': True,
+            'packsz': cb.packsz,
         }
     })
     if args.outlier_channel_split:
         all_config['model_config'].quip_params['ocs_down_size'] = args.ocs_down_size
     torch.save(all_config, os.path.join(args.save_path, 'config.pt'))
 
-    tokenizer = LlamaTokenizer.from_pretrained(args.base_model)
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     tokenizer.pad_token = tokenizer.eos_token
     glog.info('loaded model')
 
@@ -320,9 +322,17 @@ def main(args):
     quant_emb = orig_emb.clone()
     position_ids = torch.arange(args.ctx_size, dtype=torch.int32)[None, :].to(device) + \
         torch.zeros(args.batch_size, args.ctx_size, dtype=torch.int32).to(device)
-    attention_mask = model.model._prepare_decoder_attention_mask(
-        torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
-        (args.batch_size, args.ctx_size), quant_emb[0:args.batch_size], 0).to(device)
+    if hasattr(model.config, 'sliding_window'):
+        attention_mask = model.model._prepare_decoder_attention_mask(
+            torch.ones(args.batch_size, args.ctx_size,
+                       dtype=torch.bool), (args.batch_size, args.ctx_size),
+            quant_emb[0:args.batch_size],
+            0,
+            sliding_window=model.config.sliding_window).to(device)
+    else:
+        attention_mask = model.model._prepare_decoder_attention_mask(
+            torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
+            (args.batch_size, args.ctx_size), quant_emb[0:args.batch_size], 0).to(device)
 
     for i in range(len(model.model.layers)):
         model.model.layers[i] = model.model.layers[i].to(device)

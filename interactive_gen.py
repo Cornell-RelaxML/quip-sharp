@@ -3,8 +3,7 @@ import os
 import glog
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
-from transformers import LlamaTokenizer
-from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers import AutoTokenizer
 from lib.utils.unsafe_import import model_from_hf_path
 import time
 
@@ -20,7 +19,7 @@ def main(args):
     model, model_str = model_from_hf_path(args.hf_path,
                                           use_cuda_graph=False,
                                           use_flash_attn=not args.no_use_flash_attn)
-    tokenizer = LlamaTokenizer.from_pretrained(model_str)
+    tokenizer = AutoTokenizer.from_pretrained(model_str)
     tokenizer.pad_token = tokenizer.eos_token
 
     while True:
@@ -34,6 +33,7 @@ def main(args):
                                  max_length=args.max_length,
                                  penalty_alpha=0.6,
                                  top_k=4,
+                                 use_cache=True,
                                  return_dict_in_generate=True).sequences[0]
         print()
         print('Model Output: ', tokenizer.decode(outputs, skip_special_tokens=True))

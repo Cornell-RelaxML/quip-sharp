@@ -4,7 +4,6 @@ import json
 import argparse
 import torch
 import datasets
-from transformers import LlamaTokenizer, LlamaConfig
 from lib.utils import gptq_data_utils
 from lib.utils.unsafe_import import model_from_hf_path
 import random

@@ -1,5 +1,5 @@
 import torch
-import hadamard_cuda
+import fast_hadamard_transform
 from lib import utils
 
 def get_hadK(n, transpose=False):
@@ -77,13 +77,12 @@ def matmul_hadUt(X):
 def matmul_hadU_cuda(X, hadK, K, transpose=False):
     n = X.shape[-1]
     if K == 1:
-        return hadamard_cuda.hadamard_transform(X.contiguous()) / torch.tensor(n).sqrt()
+        return fast_hadamard_transform.hadamard_transform(X.contiguous()) / torch.tensor(n).sqrt()
 
     if transpose:
         hadK = hadK.T.contiguous()
-        
     input = X.float().cuda().view(-1, K, n // K)
-    input = hadamard_cuda.hadamard_transform(input.contiguous())
+    input = fast_hadamard_transform.hadamard_transform(input.contiguous())
     input = hadK.to(input.device).to(input.dtype) @ input
     return input.to(X.device).to(X.dtype).reshape(
         X.shape) / torch.tensor(n).sqrt()

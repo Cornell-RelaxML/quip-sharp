@@ -110,6 +110,7 @@ class E8P12_codebook(nn.Module):
         self.codesz = _E8P_CODESZ
         self.idx_dtype = torch.int16
         self.idx_offset = -2**15
+        self.packsz = 1
 
         self.register_buffer('grid_abs', _E8P_ABS_CACHED)
         self.register_buffer('grid_abs_even', self.grid_abs.sum(dim=-1) % 2 == 0)
@@ -190,7 +191,10 @@ class E8P12_codebook(nn.Module):
 
         return final_vals
 
-    def by_idxs(self, idxs):
+    def maybe_pack_idxs(self, idxs):
+        return idxs
+
+    def by_idxs(self, idxs, **kwargs):
         return self.grid[self.grid_idx_inv[idxs.int() - self.idx_offset]]
 
 
@@ -203,7 +207,6 @@ class QuantizedE8P12Linear(nn.Module):
         for i in range(8):
             chunk = (self.codebook.grid_abs[:, i] * 4).to(torch.int64)
             self.codebook_matvec |= chunk << (i * 8)
-
 
     def forward(self,
                 input,
@@ -219,7 +222,8 @@ class QuantizedE8P12Linear(nn.Module):
                 A=None,
                 B=None,
                 rescale_WH=False,
-                scaleWH=None):
+                scaleWH=None,
+                **kwargs):
         (m, n) = Qidxs.shape
 
         x = input.view(-1, n * _E8P_CODESZ).to(torch.float32)
@@ -233,7 +237,7 @@ class QuantizedE8P12Linear(nn.Module):
             ABx = Bx @ A.t().to(torch.float32)
 
         # TODO: find the optimal threshold
-        if x.size(0) < 3:
+        if x.size(0) < 8:
             x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000, self.codebook_matvec).to(torch.float32)
         else:
             W_decompressed = torch.zeros(m, n*_E8P_CODESZ, device=Qidxs.device, dtype=torch.float16)
