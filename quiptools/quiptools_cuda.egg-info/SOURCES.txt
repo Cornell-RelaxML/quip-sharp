@@ -1,4 +1,5 @@
 quiptools.cu
+quiptools_e8p_gemv.cu
 quiptools_wrapper.cpp
 setup.py
 quiptools_cuda.egg-info/PKG-INFO
