@@ -40,7 +40,7 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
     - `--scale_override <quantization scale parameter>`. 
     We suggest the following scale parameters for each codebook: `{E8P12: 0.9, D4: 1.1, HI4B1C: 2.7}`, however you may want to play around with scales if quantizing your own models. 
 - To convert a quantized model to the HF format: `CUDA_VISIBLE_DEVICES=0 python hfize_llama.py --quantized_path <output path of quantize_llama.py> --hf_output_path <path to save HF version>`
-- To generate your own Hessians for a Llama architecture model: `python hessian_offline_llama --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags.
+- To generate your own Hessians for a Llama architecture model: `python hessian_offline_llama --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags. **Hessian calculation uses a `fp64` accumulator for numerical accuracy. Running this script on a device with slow `fp64` capabilities will take longer.**
     - `--batch_size` Batch size per GPU. Tune so you don't run out of memory.
     - `--devset_size` Size of devset to use for Hessian generation.
     - `--ctx_size` Context size (sequence length) to use for Hessian generation.
