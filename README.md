@@ -45,6 +45,14 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
     - `--devset_size` Size of devset to use for Hessian generation.
     - `--ctx_size` Context size (sequence length) to use for Hessian generation.
     - `--base_model` Same as in `quantize_llama.py`.
+
+### I want to quantize a non-Llama architecture model, what do I do?
+
+Currently, `hessian_offline_llama.py`, `quantize_llama.py`, and `hfize_llama.py` are written for the Llama architecture. However, the only "special" things they do are identify the relevant `nn.Linear` layers that need to be quantized (q/k/v/o/up/gate/down), inject Hessian hooks, and quantize them. 
+If you want to quantize a non-Llama architecture model, you will need to find the relevant `nn.Linear` files and make your own hessian_offline/quantize/hfize files. This should be pretty straightforward and feel free to open a GitHub ticket if you run into any issues.
+You will also need copy `modeling_<architecture>.py` from the HF source into the `models/` folder and replace the relevant `nn.Linear` layers with `QuantizedLinear` layers (see how `models/llama.py` does it).
+Our current `quantize_llama.py` implementation fuses the q/k/v layers and the up/gate layers for increased speed since they share the same Hessians. However, this is not a requirement and you can also quantize those layers individually.
+
     
 ## Evaluation
 
