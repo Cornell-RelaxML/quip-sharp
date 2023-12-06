@@ -104,24 +104,28 @@ _E8P_GRID, _E8P_GRID_IDX = get_full_grid(_E8P_ABS_CACHED)
 
 class E8P12_codebook(nn.Module):
 
-    def __init__(self, build_truncated=True):
+    def __init__(self, inference=False):
         super(E8P12_codebook, self).__init__()
         self.opt_scale = 1  #.03#/1.09
         self.codesz = _E8P_CODESZ
         self.idx_dtype = torch.int16
         self.idx_offset = -2**15
         self.packsz = 1
+        self.pack_out = False
+        self.version = 0
 
         self.register_buffer('grid_abs', _E8P_ABS_CACHED)
         self.register_buffer('grid_abs_even', self.grid_abs.sum(dim=-1) % 2 == 0)
-        self.register_buffer('int_map', _INT_MAP)
-        self.register_buffer('grid', _E8P_GRID)
-        self.register_buffer('grid_idx_map', (_E8P_GRID_IDX + self.idx_offset).to(self.idx_dtype))
-        idx_lut = torch.zeros(_E8P_GRID_IDX.shape).int()
-        idx_lut[_E8P_GRID_IDX] = torch.arange(len(_E8P_GRID_IDX)).int()
-        self.register_buffer('grid_idx_inv', idx_lut)
 
-        if build_truncated:
+        if not inference:
+            self.register_buffer('int_map', _INT_MAP)
+            self.register_buffer('grid', _E8P_GRID)
+            self.register_buffer('grid_idx_map',
+                                 (_E8P_GRID_IDX + self.idx_offset).to(self.idx_dtype))
+            idx_lut = torch.zeros(_E8P_GRID_IDX.shape).int()
+            idx_lut[_E8P_GRID_IDX] = torch.arange(len(_E8P_GRID_IDX)).int()
+            self.register_buffer('grid_idx_inv', idx_lut)
+
             self.register_buffer('grid_norm', torch.diag(self.grid @ self.grid.T))
             grid_part = self.grid[:len(self.grid) // 2] - 1 / 4
             idxs = torch.where(
@@ -202,8 +206,8 @@ class QuantizedE8P12Linear(nn.Module):
 
     def __init__(self, device):
         super().__init__()
-        self.codebook = E8P12_codebook(build_truncated=False).to(device).to(torch.float16)
-        self.codebook_matvec = torch.zeros((256,), dtype=torch.int64, device=device)
+        self.codebook = E8P12_codebook(inference=True).to(torch.float16).to(device)
+        self.codebook_matvec = torch.zeros((256, ), dtype=torch.int64, device=device)
         for i in range(8):
             chunk = (self.codebook.grid_abs[:, i] * 4).to(torch.int64)
             self.codebook_matvec |= chunk << (i * 8)
@@ -238,11 +242,15 @@ class QuantizedE8P12Linear(nn.Module):
 
         # TODO: find the optimal threshold
         if x.size(0) < 6:
-            x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000, self.codebook_matvec).to(torch.float32)
+            x = quiptools_cuda.decode_matmul_e8p(x, Qidxs - 0x8000,
+                                                 self.codebook_matvec).to(torch.float32)
         else:
-            W_decompressed = torch.zeros(m, n*_E8P_CODESZ, device=Qidxs.device, dtype=torch.float16)
-            quiptools_cuda.decompress_e8p_origorder(
-                Qidxs, self.codebook.grid_abs, self.codebook.grid_abs_even, W_decompressed)
+            W_decompressed = torch.zeros(m,
+                                         n * _E8P_CODESZ,
+                                         device=Qidxs.device,
+                                         dtype=torch.float16)
+            quiptools_cuda.decompress_e8p_origorder(Qidxs, self.codebook.grid_abs,
+                                                    self.codebook.grid_abs_even, W_decompressed)
             x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
 
         x *= Wscale

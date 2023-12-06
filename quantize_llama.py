@@ -275,6 +275,7 @@ def main(args):
             'lora_rank': args.lora_rank,
             'rescale_WH': args.rescale_WH,
             'codebook': args.codebook,
+            'codebook_version': cb.version,
             'codesz': cb.codesz,
             'idx_dtype': str(cb.idx_dtype),
             'fused': True,
@@ -290,7 +291,8 @@ def main(args):
     glog.info('loaded model')
 
     dataset = load_dataset('togethercomputer/RedPajama-Data-1T-Sample', split='train')
-    devset = utils.sample_devset(dataset, tokenizer, args.devset_size, args.ctx_size, args.sample_proc)
+    devset = utils.sample_devset(dataset, tokenizer, args.devset_size, args.ctx_size,
+                                 args.sample_proc)
     glog.info('loaded dataset and devset')
 
     # Reduce cpu memory consumption at the expense of latency. Tune as needed
