@@ -48,6 +48,7 @@ if is_flash_attn_available():
     _flash_supports_window_size = "window_size" in list(inspect.signature(flash_attn_func).parameters)
 
 from lib.linear.quantized_linear import QuantizedLinear
+from .version import check_model_version
 
 logger = logging.get_logger(__name__)
 
@@ -195,7 +196,9 @@ class MistralMLP(nn.Module):
                                            self.intermediate_size * 2,
                                            config.quip_params['codesz'],
                                            config.quip_params.get('packsz', 1),
+                                           config.quip_params.get('pack_out', False),
                                            config.quip_params['idx_dtype'],
+                                           config.quip_params.get('codebook_version', 0),
                                            rank=config.quip_params['lora_rank'],
                                            rescale_WH=config.quip_params['rescale_WH'])
         self.down_proj = QuantizedLinear(
@@ -204,7 +207,9 @@ class MistralMLP(nn.Module):
             self.hidden_size,
             config.quip_params['codesz'],
             config.quip_params.get('packsz', 1),
+            config.quip_params.get('pack_out', False),
             config.quip_params['idx_dtype'],
+            config.quip_params.get('codebook_version', 0),
             outlier_channel_split=self.config.quip_params['outlier_channel_split'],
             rank=self.config.quip_params['lora_rank'],
             rescale_WH=self.config.quip_params['rescale_WH'])
@@ -265,7 +270,9 @@ class MistralAttention(nn.Module):
             (self.num_key_value_heads * self.head_dim),
             config.quip_params['codesz'],
             config.quip_params.get('packsz', 1),
+            config.quip_params.get('pack_out', False),
             config.quip_params['idx_dtype'],
+            config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
             rescale_WH=config.quip_params['rescale_WH'])
 
@@ -273,7 +280,9 @@ class MistralAttention(nn.Module):
                                       self.hidden_size,
                                       config.quip_params['codesz'],
                                       config.quip_params.get('packsz', 1),
+                                      config.quip_params.get('pack_out', False),
                                       config.quip_params['idx_dtype'],
+                                      config.quip_params.get('codebook_version', 0),
                                       rank=config.quip_params['lora_rank'],
                                       rescale_WH=config.quip_params['rescale_WH'])
 
@@ -747,6 +756,7 @@ class MistralPreTrainedModel(PreTrainedModel):
     _supports_flash_attn_2 = True
 
     def _init_weights(self, module):
+        check_model_version(self.config.quip_params.get('model_version', 0))
         std = self.config.initializer_range
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)

@@ -16,28 +16,30 @@ _HI4B1C_NORM_CACHED = torch.diag(_HI4B1C_CACHED @ _HI4B1C_CACHED.T)
 
 class HI4B1C_codebook(nn.Module):
 
-    def __init__(self, build_truncated=True):
+    def __init__(self, inference=False):
         super(HI4B1C_codebook, self).__init__()
         self.opt_scale = 2.97
         self.codesz = 1
         self.idx_dtype = torch.int32
         self.packsz = 8
+        self.pack_out = False
+        self.version = 0
 
-        grid = _HI4B1C_CACHED
-        self.register_buffer('grid', grid)
-        self.register_buffer('grid_norm', _HI4B1C_NORM_CACHED)
-        '''
-        self.cuda()
-        samples = torch.distributions.multivariate_normal.MultivariateNormal(torch.zeros(1), torch.eye(1)).rsample([200000]).cuda()
-        print(samples.shape)
-        def fn_s(s):
-            err = (self.quantize(samples*s, False)/s - samples).float().norm()**2
-            err = err.cpu() / torch.numel(samples)
-            return err.cpu()        
-        import scipy
-        print(scipy.optimize.minimize_scalar(fn_s, bounds=(0.1, 100)))
-        exit()
-        '''
+        self.register_buffer('grid', _HI4B1C_CACHED)
+        if not inference:
+            self.register_buffer('grid_norm', _HI4B1C_NORM_CACHED)
+            '''
+            self.cuda()
+            samples = torch.distributions.multivariate_normal.MultivariateNormal(torch.zeros(1), torch.eye(1)).rsample([200000]).cuda()
+            print(samples.shape)
+            def fn_s(s):
+                err = (self.quantize(samples*s, False)/s - samples).float().norm()**2
+                err = err.cpu() / torch.numel(samples)
+                return err.cpu()        
+            import scipy
+            print(scipy.optimize.minimize_scalar(fn_s, bounds=(0.1, 100)))
+            exit()
+            '''
 
     def round(self, X, grid, grid_norm):
         assert X.shape[-1] == self.codesz
@@ -60,7 +62,7 @@ class HI4B1C_codebook(nn.Module):
             (idxs[:, 3::self.packsz] << 4*2) + \
             (idxs[:, 5::self.packsz] << 4*1) + \
             idxs[:, 7::self.packsz]
-    
+
     def by_idxs(self, idxs, packed=False):
         if packed:
             idxs = idxs.repeat_interleave(self.packsz, dim=-1)
@@ -80,8 +82,7 @@ class QuantizedHI4B1CLinear(nn.Module):
 
     def __init__(self, device):
         super().__init__()
-        self.codebook = HI4B1C_codebook(build_truncated=False).to(device)
-        self.codebook.grid = self.codebook.grid.to(torch.float16)
+        self.codebook = HI4B1C_codebook(inference=True).to(torch.float16).to(device)
 
     def forward(self,
                 input,
@@ -120,7 +121,7 @@ class QuantizedHI4B1CLinear(nn.Module):
             quiptools_cuda.decompress_hi4b1c_packed(Qidxs, self.codebook.grid, W_decompressed)
         else:
             W_decompressed = self.codebook.by_idxs(Qidxs, packed=False).reshape(-1, n)
-        
+
         z = x @ W_decompressed.t()
 
         x = z.to(torch.float32)

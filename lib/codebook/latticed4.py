@@ -116,14 +116,17 @@ def quantize_full_lattice(X):
 
 class D4_codebook(nn.Module):
 
-    def __init__(self):
+    def __init__(self, inference=False):
         super(D4_codebook, self).__init__()
         self.register_buffer("grid", build_D4_CB())
-        self.register_buffer('grid_norm', (self.grid @ self.grid.T).diag())
+        if not inference:
+            self.register_buffer('grid_norm', (self.grid @ self.grid.T).diag())
         self.codesz = _D4_CODESZ
         self.opt_scale = 1.21
         self.idx_dtype = torch.uint8
         self.packsz = 1
+        self.pack_out = False
+        self.version = 0
 
     def _quantize_noscale(self, X, return_idx=True):
         Xqidx = (2 * X @ self.grid.T - self.grid_norm).argmax(1)
@@ -137,7 +140,7 @@ class D4_codebook(nn.Module):
 
     def maybe_pack_idxs(self, idxs):
         return idxs
-    
+
     def by_idxs(self, idxs, **kwargs):
         return self.grid[idxs.int()]
 
@@ -146,7 +149,7 @@ class QuantizedD4Linear(nn.Module):
 
     def __init__(self, device):
         super().__init__()
-        self.codebook = D4_codebook().to(device).to(torch.float16)
+        self.codebook = D4_codebook(inference=True).to(torch.float16).to(device)
 
     def forward(self,
                 input,

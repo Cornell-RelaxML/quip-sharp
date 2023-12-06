@@ -27,12 +27,12 @@ def main(args):
     prompt = 'It is a truth universally acknowledged that'
     inputs = tokenizer(prompt, return_tensors='pt')
     token = inputs['input_ids'][0:1, 0:1].cuda().repeat(args.batch_size, args.seqlen)
-    model(token)
+    model(token, use_cache=False)
 
     torch.cuda.synchronize()
     start = time.time()
     for _ in range(args.samples):
-        model(token)
+        model(token, use_cache=False)
     torch.cuda.synchronize()
     end = time.time()
     print('TIME', (end - start) / args.samples)

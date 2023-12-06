@@ -5,9 +5,20 @@ from lib.utils import dtype_from_str, get_hadK
 from lib import codebook
 import time
 
+
 class QuantizedLinear(nn.Module):
 
-    def __init__(self, in_features, out_features, codesz, packsz, idx_dtype, outlier_channel_split=False, rank=-1, rescale_WH=False):
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 codesz,
+                 packsz,
+                 pack_out,
+                 idx_dtype,
+                 codebook_version,
+                 outlier_channel_split=False,
+                 rank=-1,
+                 rescale_WH=False):
         super().__init__()
 
         self.in_features = in_features
@@ -30,9 +41,21 @@ class QuantizedLinear(nn.Module):
             self.register_buffer("scaleWH", torch.ones(in_features))
         else:
             self.scaleWH = None
-            
-        self.register_buffer("Qidxs", torch.zeros(
-            out_features, in_features // (codesz*packsz), dtype=dtype_from_str(idx_dtype)))
+
+        # direction we pack in, the code dimension is always in the in dimension
+        if pack_out:
+            self.register_buffer(
+                "Qidxs",
+                torch.zeros(out_features // packsz,
+                            in_features // codesz,
+                            dtype=dtype_from_str(idx_dtype)))
+        else:
+            self.register_buffer(
+                "Qidxs",
+                torch.zeros(out_features,
+                            in_features // (codesz * packsz),
+                            dtype=dtype_from_str(idx_dtype)))
+
         self.register_buffer("codebook_id", torch.tensor(0))
         self.register_buffer("SU", torch.ones(in_features))
         self.register_buffer("SV", torch.ones(out_features))
@@ -40,6 +63,7 @@ class QuantizedLinear(nn.Module):
 
         self.built_codebook_class = False
         self.built_graph = False
+        self.codebook_version = codebook_version
 
         had_left, K_left = get_hadK(in_features)
         had_right, K_right = get_hadK(out_features)
@@ -48,19 +72,33 @@ class QuantizedLinear(nn.Module):
         self.K_left = K_left
         self.K_right = K_right
         self.packed = (packsz != 1)
-        
+
     def forward(self, input):
         if not self.built_codebook_class:
-            self.codebook_class = codebook.get_quantized_class(
-                self.codebook_id.item())(self.Qidxs.device)
+            self.codebook_class = codebook.get_quantized_class(self.codebook_id.item())(
+                self.Qidxs.device)
+            if self.codebook_class.codebook.version != self.codebook_version:
+                raise Exception(
+                    f"Saved weights version ({self.codebook_version}) does not match the "\
+                    f"codebook version ({self.codebook_class.codebook.version}). "\
+                    "Please download the latest weights from https://huggingface.co/relaxml")
             self.built_codebook_class = True
 
         if self.outlier_channel_split:
             input = input[..., self.ocs_dupe_inds]
 
-        return self.codebook_class(
-            input,
-            self.Qidxs, self.SU, self.SV, self.Wscale,
-            self.had_left, self.had_right, self.K_left, self.K_right,
-            rank=self.rank, A=self.A, B=self.B,
-            rescale_WH=self.rescale_WH, scaleWH=self.scaleWH, packed=self.packed)
+        return self.codebook_class(input,
+                                   self.Qidxs,
+                                   self.SU,
+                                   self.SV,
+                                   self.Wscale,
+                                   self.had_left,
+                                   self.had_right,
+                                   self.K_left,
+                                   self.K_right,
+                                   rank=self.rank,
+                                   A=self.A,
+                                   B=self.B,
+                                   rescale_WH=self.rescale_WH,
+                                   scaleWH=self.scaleWH,
+                                   packed=self.packed)

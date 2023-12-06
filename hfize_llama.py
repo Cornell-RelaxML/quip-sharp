@@ -3,6 +3,7 @@ import os
 import glog
 import torch
 from transformers import AutoTokenizer
+from model.version import MODEL_VERSION
 from model.llama import LlamaForCausalLM as llama_fuse
 from model.llama_nofuse import LlamaForCausalLM as llama_nofuse
 from model.mistral import MistralForCausalLM
@@ -50,6 +51,7 @@ def main(args):
 
     model_type = model_config.model_type
     fused = model_config.quip_params.get('fused', True)
+    model_config.quip_params['model_version'] = MODEL_VERSION
 
     if model_type == 'llama':
         model_cls = llama_fuse if fused else llama_nofuse
