@@ -58,22 +58,38 @@ def block_LDL(H, b):
 def wrap_tokenizer(tokenizer, x, ctx_size):
     return tokenizer(x, return_tensors='pt', truncation=True, padding=True, max_length=ctx_size)
 
+
 def sample_devset(dataset, tokenizer, size=128, ctx_size=2048, nproc=1):
     devset = torch.zeros((size, ctx_size), dtype=torch.int64)
     saved = 0
-    p = mp.Pool(nproc)
-    while saved < size:
-        seqs = [(tokenizer, dataset[torch.randint(len(dataset), (size,))]['text'], ctx_size) for _ in range(nproc)]
-        tokens = p.starmap(wrap_tokenizer, seqs)
-        for i in range(len(tokens)):
-            lens = tokens[i].attention_mask.sum(dim=-1)
-            good = torch.where(lens == ctx_size)[0]
-            if len(good) > 0:
-                if saved + len(good) > size:
-                    good = good[:size - saved]
-                devset[saved: saved+len(good)] = tokens[i].input_ids[good]
-                saved += len(good)
-                print(saved)
+    if nproc > 1:
+        p = mp.Pool(nproc)
+        while saved < size:
+            seqs = [(tokenizer, dataset[torch.randint(len(dataset), (size,))]['text'], ctx_size) for _ in range(nproc)]
+            tokens = p.starmap(wrap_tokenizer, seqs)
+            for i in range(len(tokens)):
+                lens = tokens[i].attention_mask.sum(dim=-1)
+                good = torch.where(lens == ctx_size)[0]
+                if len(good) > 0:
+                    if saved + len(good) > size:
+                        good = good[:size - saved]
+                    devset[saved: saved+len(good)] = tokens[i].input_ids[good]
+                    saved += len(good)
+                    print(saved)
+    else:
+        while saved < size:
+         tokens = tokenizer(dataset[torch.randint(len(dataset), (size,))]['text'],
+                            return_tensors='pt',
+                            truncation=True,
+                            padding=True,
+                            max_length=ctx_size)
+         lens = tokens.attention_mask.sum(dim=-1)
+         good = torch.where(lens == ctx_size)[0]
+         if len(good) > 0:
+             if saved + len(good) > size:
+                 good = good[:size - saved]
+             devset[saved: saved+len(good)] = tokens.input_ids[good]
+             saved += len(good)
     return devset
 
 

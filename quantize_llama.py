@@ -44,6 +44,7 @@ parser.add_argument('--full_svd', action='store_true')
 parser.add_argument('--no_use_buffered', action='store_true')
 parser.add_argument('--q_buffer_size', default=2, type=int)
 parser.add_argument('--rescale_WH', action='store_true')
+parser.add_argument('--sample_proc', default=1, type=int)
 
 
 def quantize_kqv(layer, idx, cb, args, device='cpu', check_only=False):
@@ -289,7 +290,7 @@ def main(args):
     glog.info('loaded model')
 
     dataset = load_dataset('togethercomputer/RedPajama-Data-1T-Sample', split='train')
-    devset = utils.sample_devset(dataset, tokenizer, args.devset_size)
+    devset = utils.sample_devset(dataset, tokenizer, args.devset_size, args.ctx_size, args.sample_proc)
     glog.info('loaded dataset and devset')
 
     # Reduce cpu memory consumption at the expense of latency. Tune as needed
