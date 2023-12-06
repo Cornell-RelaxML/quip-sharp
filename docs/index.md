@@ -23,7 +23,7 @@ th {
 
 ## QuIP#: [QuIP](https://github.com/jerry-chee/QuIP) with Lattice Codebooks
 
-[Albert Tseng*](https://tsengalb99.github.io), [Jerry Chee*](https://jerry-chee.github.io/), [Qingyao Sun](https://nalzok.github.io/), and [Chris De Sa](https://www.cs.cornell.edu/~cdesa/)
+[Albert Tseng*](https://tsengalb99.github.io), [Jerry Chee*](https://jerry-chee.github.io/), [Qingyao Sun](https://nalzok.github.io/), [Volodymyr Kuleshov](https://www.cs.cornell.edu/~kuleshov/), and [Chris De Sa](https://www.cs.cornell.edu/~cdesa/)
 
 ---
 
