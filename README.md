@@ -18,6 +18,7 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
 
 ## News
 
+- We have "deprecated" the 2 bit D4 quantized models as they perform worse than 2 bit E8P models and are slower to run. The code to quantize and run D4 models is still in the codebase, but the D4 models have been removed from HF and we are no longer actively supporting them.
 - We recently added 2 and 4 bit quantized versions of [Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) and [OpenHermes 2.5](https://huggingface.co/teknium/OpenHermes-2.5-Mistral-7B). See the Model Zoo section for more details.
 - **The 4 bit models have been replaced by new bit-packed models that end with the `-Packed` suffix. The old models have been deprecated, removed, and do not work with the current code (and vice versa). Make sure to pull the latest code to run the 4 bit models.**
 
@@ -73,7 +74,6 @@ All it does is call HF's `.generate()` function.
 We provide quantized models available on HF.
 To use them, pass the given HF repo_id to `--hf_path`.
 We recommend using the `E8P` codebook which quantizes to 2 bits per weight, which gives the best quantization at 2 bits.
-Other options are the `D4` codebook at 2 bits, and the half-integer grid `HI4B1C` codebook at 4 bits.
 See our blogpost for details on the codebooks.
 
 | Lattice Codebook | Base Model  | Weight Bits | HF repo_id |
@@ -90,13 +90,6 @@ See our blogpost for details on the codebooks.
 |                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
 |		   | Mistral 7b  | 2	       | [`relaxml/Mistral-7b-E8P-2Bit`](https://huggingface.co/relaxml/Mistral-7b-E8P-2Bit)   |
 |		   | OpenHermes 2.5 | 2	       | [`relaxml/Openhermes-7b-E8P-2Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8P-2Bit)   |
-| D4               | Llama 2 70b | 2           | [`relaxml/Llama-2-70b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-D4-2Bit) |
-|                  | Llama 2 13b | 2           | [`relaxml/Llama-2-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-D4-2Bit) |
-|                  | Llama 2 7b  | 2           | [`relaxml/Llama-2-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-D4-2Bit)   |
-|                  | Llama 1 65b | 2           | [`relaxml/Llama-1-65b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-D4-2Bit) |
-|                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-D4-2Bit) |
-|                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-D4-2Bit) |
-|                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-D4-2Bit)   |
 | HI               | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-70b-HI-4Bit-Packed) |
 |                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-13b-HI-4Bit-Packed) |
 |                  | Llama 2 7b  | 4           | [`relaxml/Llama-2-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-7b-HI-4Bit-Packed)   |
