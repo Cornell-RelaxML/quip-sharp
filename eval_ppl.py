@@ -10,46 +10,45 @@ import random
 import glog
 
 from tqdm import tqdm
+import sys # use sys argv to avoid arg conflict
+from modules.llamacpp_hf import LlamacppHF
+from modules import shared
+shared.args.cfg_cache = True
+shared.args.logits_all = True
 
 torch.set_grad_enabled(False)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--seed', default=0, type=int)
-parser.add_argument('--hf_path', default='hfized/quantized_hada_70b', type=str)
-parser.add_argument('--seqlen', default=4096, type=int)
-parser.add_argument('--no_use_cuda_graph', action='store_true')
-parser.add_argument('--no_use_flash_attn', action='store_true')
-
-
-def main(args):
+def main():
     datasets = ['wikitext2', 'c4']
-    model, model_str = model_from_hf_path(args.hf_path,
-                                          use_cuda_graph=not args.no_use_cuda_graph,
-                                          use_flash_attn=not args.no_use_flash_attn)
+    model = LlamacppHF.from_pretrained(shared.args.model_dir)
 
+    # model str gets tokenizer
+    if 'v2' in shared.args.model_dir:
+        seqlen = 4096
+        model_str = 'meta-llama/Llama-2-7b-hf'
+    else:
+        seqlen = 2048
+        model_str = '/mnt/desa_data/meta_llama1/huggingface_7B'
+        
     for dataset in datasets:
         input_tok = gptq_data_utils.get_test_tokens(dataset,
-                                                    seed=args.seed,
-                                                    seqlen=args.seqlen,
+                                                    seed=0,
+                                                    seqlen=seqlen,
                                                     model=model_str)
-        nsamples = input_tok.numel() // args.seqlen
-        input_tok = input_tok[0, :(args.seqlen * nsamples)].view(nsamples, args.seqlen)
-
-        if not args.no_use_cuda_graph:
-            model.reset()
-
+        nsamples = input_tok.numel() // seqlen
+        input_tok = input_tok[0, :(seqlen * nsamples)].view(nsamples, seqlen)
         loss_fct = torch.nn.CrossEntropyLoss().cuda()
         acc_loss = 0.0
         progress = tqdm(range(nsamples))
         for ii in progress:
             input = input_tok[ii, :].cuda().view(1, -1)
-            output = model(input,
+            output = model(input_ids=input,
                            use_cache=False,
-                           output_hidden_states=False,
-                           output_attentions=False)[0]
-            shift_logits = output[:, :-1, :].contiguous()
-            shift_labels = input[:, 1:]
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+                           output_hidden_states=True,
+                           output_attentions=False)
+            shift_logits = torch.tensor(output[:-1]).cuda()
+            shift_labels = torch.tensor(input[0][1:]).cuda()
+            loss = loss_fct(shift_logits, shift_labels)
             acc_loss += loss.item()
             progress.set_description(f"avg_loss = {acc_loss/(ii+1)}")
 
@@ -61,7 +60,6 @@ def main(args):
 
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
-    args = parser.parse_args()
-    random.seed(args.seed)
-    torch.random.manual_seed(args.seed)
-    main(args)
+    random.seed(0)
+    torch.random.manual_seed(0)
+    main()
