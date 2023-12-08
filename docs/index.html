@@ -323,12 +323,11 @@ transform-based incoherence approach that is more amenable to fast GPU
 acceleration.</p>
 <p>Incoherence-processed weights are approximately Gaussian-distributed,
 which means that they are suitable for quantizing with symmetric and
-“round” codebooks. We introduce two new lattice codebooks based on the
-<span class="math inline">\(E_8\)</span> and <span
-class="math inline">\(D_4\)</span> lattices; these lattices achieve
-optimal packing densities for unit balls in 8 and 4 dimensions,
-respectively. Our codebooks are specifically designed to be
-hardware-friendly by exploiting symmetries in these lattices.</p>
+“round” codebooks. We introduce a new lattice codebook based on the
+<span class="math inline">\(E_8\)</span> lattice, which achieves the
+optimal 8 dimension unit ball packing density. Our codebooks are
+specifically designed to be hardware-friendly by exploiting symmetries
+in these lattices.</p>
 <h3 id="quantization-background">Quantization Background</h3>
 <p>In QuIP#, we follow existing state-of-the-art post training
 quantization methods and round weights to minimize the per-layer
@@ -475,14 +474,14 @@ class="math inline">\(E_8\)</span> lattice has <span
 class="math inline">\(2^{16}\)</span> entries but only requires looking
 up into a size <span class="math inline">\(2^8\)</span> codebook due to
 symmetries inherent to the <span class="math inline">\(E_8\)</span>
-lattice itself – more on this later. In QuIP#, we present two codebooks
-based on the 8-dimensional <span class="math inline">\(E_8\)</span> and
-4-dimensional <span class="math inline">\(D_4\)</span> lattices. These
-two lattices achieve their respective kissing numbers, or the maximum
-number of unit balls touching a central unit ball in n dimensions.
-Interestingly, Maryna Viazovska recently won the Fields Medal in 2022
-“for the proof that the <span class="math inline">\(E_8\)</span> lattice
-provides the densest packing of identical spheres in 8 dimensions.”</p>
+lattice itself – more on this later. In QuIP#, we present the E8P
+codebook based on the 8-dimensional <span
+class="math inline">\(E_8\)</span> lattice. This lattice achieves the 8
+dimensional kissing number, or the maximum number of unit balls touching
+a central unit ball in 8 dimensions. Interestingly, Maryna Viazovska
+recently won the Fields Medal in 2022 “for the proof that the <span
+class="math inline">\(E_8\)</span> lattice provides the densest packing
+of identical spheres in 8 dimensions.”</p>
 <figure>
 <img src="img/kissing2d.png"
 alt="The 2D kissing number is 6, which is achieved by this packing configuration. Image from Wikipedia." />
@@ -581,11 +580,6 @@ class="math inline">\(\le \sqrt{10}\)</span> plus 29 elements from <span
 class="math inline">\(|\hat{D_8}|\)</span> that have norm <span
 class="math inline">\(\sqrt{12}\)</span>. The exact elements chosen can
 be found in our code.</p>
-<h4 id="d4-codebook">D4 Codebook</h4>
-<p>The D4 codebook is much simpler. There are conveniently 256 entries
-in the <span class="math inline">\(D_4\)</span> lattice with norm less
-than 3, which results in 2 bits per weight. All we do is look up in to
-this codebook. There is no sign flipping magic and WYSIWYG. Amazing.</p>
 <h4 id="codebook-errors">Codebook Errors</h4>
 <p>To show the optimality of our lattice codebooks, we plotted the
 minimum achievable elementwise MSE of quantizing a <span
@@ -610,10 +604,10 @@ the <a href="https://en.wikipedia.org/wiki/Kissing_number">densest
 unit-sphere packing in 8 dimensions</a> and our derivative codebooks
 have the lowest MSE.</figcaption>
 </figure>
-<p>In the 8 and 4 dimensional settings, the <span
-class="math inline">\(E_8\)</span> and <span
-class="math inline">\(D_4\)</span> codebooks achieve lower MSEs than the
-half integer codebooks. Furthermore, this figure shows the importance of
+<p>The <span class="math inline">\(E_8\)</span>-based codebooks achieves
+lower MSEs than all other codebooks, including those based on the <span
+class="math inline">\(D_4\)</span> lattice that achieves the 4
+dimensional kissing number. This figure also shows the importance of
 having a large number of columns <span class="math inline">\(n\)</span>.
 Increasing the number of columns decreases the error for the half
 integer grid, as the resulting codebook is more “round.” Since the E8P
@@ -623,11 +617,7 @@ class="math inline">\(\hat{D_8}\)</span>, it is not perfectly round.
 This is reflected in the MSE plot, where it sits slightly above the
 <span class="math inline">\(E_8\)</span> line. However, there does not
 exist a <span class="math inline">\(E_8\)</span> codebook with exactly 2
-bits, so E8P is still practically superior. Finally, we calculate that
-by switching from <span class="math inline">\(D_4\)</span> to <span
-class="math inline">\(E_8\)</span>, we save an average of 0.1 bits while
-maintaining the same MSE, which is a significant percentage of the total
-number of bits at extreme-compression regimes.</p>
+bits, so E8P is still practically superior.</p>
 <h3 id="results">Results</h3>
 <p>Here, we present quantization results using QuIP# on Llama 1 and 2
 models. All models were quantized using the Hadamard transform for
@@ -636,19 +626,14 @@ the optimal scale for a multivariate Gaussian to compensate for
 inter-layer interactions. Furthermore, all Llama 2 models were evaluated
 using a context lenth of 4096 and all Llama 1 models were evaluated with
 context length 2048; these numbers match the context length the models
-were trained with. These models can be found in our <a
+were trained with. These and other models can be found in our <a
 href="https://huggingface.co/relaxml">Hugging Face repository</a>.</p>
-<p>The first table contains results for all Llama 1 and 2 models when
+<p>The table below contains results for all Llama 1 and 2 models when
 quantized to 2 bits using the E8P codebook. QuIP# achieves excellent
 performance across all model sizes on both language modeling and zero
 shot tasks. Furthermore, on the zero-shot tasks (ArcC, ArcE, BoolQ,
 PiQA, WinoGrande), QuIP# models achieve near-native performance with
-minimal degradation. The second table contains a comparison of the E8P
-and D4 codebooks. As expected, E8P-quantized models outperform D4 models
-on almost all tasks. We also include the 4 bit Half Integer 1 Column
-codebook as a reference to what is possible at 4 bits with just
-incoherence processing and no lattice codebooks.</p>
-<p>Additional results are available <a
+minimal degradation. Additional results are available <a
 href="https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing">here</a>.</p>
 <div style="margin-left: -6%;
             margin-right: auto;
@@ -842,146 +827,6 @@ class="math inline">\(\uparrow\)</span></th>
 <td style="text-align: center;">0.673</td>
 <td style="text-align: center;">0.724</td>
 <td style="text-align: center;">0.621</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div style="margin-left: -10%;
-            margin-right: auto;
-            width: 120%;">
-<table>
-<caption>Quantization results on Llama 1-65B and 2-70B for various
-codebooks. The E8P codebook outperforms the D4 codebook on most tasks.
-Bold indicates the best 2 bit result within a specific model.</caption>
-<colgroup>
-<col style="width: 5%" />
-<col style="width: 5%" />
-<col style="width: 2%" />
-<col style="width: 7%" />
-<col style="width: 11%" />
-<col style="width: 10%" />
-<col style="width: 10%" />
-<col style="width: 14%" />
-<col style="width: 13%" />
-<col style="width: 19%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: center;">Model</th>
-<th style="text-align: center;">Codebook</th>
-<th style="text-align: center;">Bits</th>
-<th style="text-align: center;">C4<span
-class="math inline">\(\downarrow\)</span></th>
-<th style="text-align: center;">Wiki<span
-class="math inline">\(\downarrow\)</span></th>
-<th style="text-align: center;">ArcC<span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">ArcE<span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">BoolQ<span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">PiQA<span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">WinoGrande<span
-class="math inline">\(\uparrow\)</span></th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: center;">2-70B</td>
-<td style="text-align: center;">–</td>
-<td style="text-align: center;">16</td>
-<td style="text-align: center;">5.533</td>
-<td style="text-align: center;">3.120</td>
-<td style="text-align: center;">0.480</td>
-<td style="text-align: center;">0.597</td>
-<td style="text-align: center;">0.766</td>
-<td style="text-align: center;">0.809</td>
-<td style="text-align: center;">0.768</td>
-</tr>
-<tr class="even">
-<td style="text-align: center;">2-70B</td>
-<td style="text-align: center;">E8P</td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;"><strong>6.535</strong></td>
-<td style="text-align: center;"><strong>4.156</strong></td>
-<td style="text-align: center;"><strong>0.469</strong></td>
-<td style="text-align: center;"><strong>0.595</strong></td>
-<td style="text-align: center;">0.795</td>
-<td style="text-align: center;"><strong>0.785</strong></td>
-<td style="text-align: center;"><strong>0.740</strong></td>
-</tr>
-<tr class="odd">
-<td style="text-align: center;">2-70B</td>
-<td style="text-align: center;">D4</td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;">6.797</td>
-<td style="text-align: center;">4.408</td>
-<td style="text-align: center;">0.456</td>
-<td style="text-align: center;">0.575</td>
-<td style="text-align: center;"><strong>0.799</strong></td>
-<td style="text-align: center;">0.783</td>
-<td style="text-align: center;">0.737</td>
-</tr>
-<tr class="even">
-<td style="text-align: center;">2-70B</td>
-<td style="text-align: center;">Half Int</td>
-<td style="text-align: center;">4</td>
-<td style="text-align: center;">5.606</td>
-<td style="text-align: center;">3.216</td>
-<td style="text-align: center;">0.494</td>
-<td style="text-align: center;">0.601</td>
-<td style="text-align: center;">0.777</td>
-<td style="text-align: center;">0.806</td>
-<td style="text-align: center;">0.762</td>
-</tr>
-<tr class="odd">
-<td style="text-align: center;">1-65b</td>
-<td style="text-align: center;">–</td>
-<td style="text-align: center;">16</td>
-<td style="text-align: center;">5.811</td>
-<td style="text-align: center;">3.532</td>
-<td style="text-align: center;">0.463</td>
-<td style="text-align: center;">0.588</td>
-<td style="text-align: center;">0.823</td>
-<td style="text-align: center;">0.809</td>
-<td style="text-align: center;">0.771</td>
-</tr>
-<tr class="even">
-<td style="text-align: center;">1-65b</td>
-<td style="text-align: center;">E8P</td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;"><strong>6.749</strong></td>
-<td style="text-align: center;"><strong>4.573</strong></td>
-<td style="text-align: center;"><strong>0.435</strong></td>
-<td style="text-align: center;">0.566</td>
-<td style="text-align: center;"><strong>0.831</strong></td>
-<td style="text-align: center;"><strong>0.792</strong></td>
-<td style="text-align: center;"><strong>0.756</strong></td>
-</tr>
-<tr class="odd">
-<td style="text-align: center;">1-65b</td>
-<td style="text-align: center;">D4</td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;">6.954</td>
-<td style="text-align: center;">4.740</td>
-<td style="text-align: center;">0.433</td>
-<td style="text-align: center;"><strong>0.571</strong></td>
-<td style="text-align: center;">0.825</td>
-<td style="text-align: center;">0.791</td>
-<td style="text-align: center;">0.732</td>
-</tr>
-<tr class="even">
-<td style="text-align: center;">1-65b</td>
-<td style="text-align: center;">Half Int</td>
-<td style="text-align: center;">4</td>
-<td style="text-align: center;">5.877</td>
-<td style="text-align: center;">3.633</td>
-<td style="text-align: center;">0.461</td>
-<td style="text-align: center;">0.587</td>
-<td style="text-align: center;">0.832</td>
-<td style="text-align: center;">0.810</td>
-<td style="text-align: center;">0.763</td>
 </tr>
 </tbody>
 </table>
