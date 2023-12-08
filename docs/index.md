@@ -73,7 +73,7 @@ Incoherence processing in the context of model quantization was introduced in Qu
 While QuIP used a Kronecker product to perform incoherence processing, we introduce a Hadamard transform-based incoherence approach that is more amenable to fast GPU acceleration.
 
 Incoherence-processed weights are approximately Gaussian-distributed, which means that they are suitable for quantizing with symmetric and “round” codebooks.
-We introduce two new lattice codebooks based on the $E_8$ and $D_4$ lattices; these lattices achieve optimal packing densities for unit balls in 8 and 4 dimensions, respectively.
+We introduce a new lattice codebook based on the $E_8$ lattice, which achieves the optimal 8 dimension unit ball packing density.
 Our codebooks are specifically designed to be hardware-friendly by exploiting symmetries in these lattices.
 
 ### Quantization Background
@@ -146,8 +146,8 @@ Thus, it is important to design codebooks that both have relatively large $n$ wh
 
 Geometric lattices are suitable bases for such codebooks as most lattices have inherent symmetries and certain lattices achieve optimal bin packing densities.
 For example, our E8P codebook based on the $E_8$ lattice has $2^{16}$ entries but only requires looking up into a size $2^8$ codebook due to symmetries inherent to the $E_8$ lattice itself -- more on this later.
-In QuIP#, we present two codebooks based on the 8-dimensional $E_8$ and 4-dimensional $D_4$ lattices.
-These two lattices achieve their respective kissing numbers, or the maximum number of unit balls touching a central unit ball in n dimensions.
+In QuIP#, we present the E8P codebook based on the 8-dimensional $E_8$ lattice.
+These lattice achieves the 8 dimensional kissing number, or the maximum number of unit balls touching a central unit ball in 8 dimensions.
 Interestingly, Maryna Viazovska recently won the Fields Medal in 2022 “for the proof that the $E_8$ lattice provides the densest packing of identical spheres in 8 dimensions.”
 
 ![The 2D kissing number is 6, which is achieved by this packing configuration. Image from Wikipedia.](img/kissing2d.png)
@@ -198,14 +198,6 @@ In our implementation, we set $S$ to be the 227 elements of $|\hat{D_8}|$ with n
 The exact elements chosen can be found in our code.
 
 
-#### D4 Codebook
-
-The D4 codebook is much simpler.
-There are conveniently 256 entries in the $D_4$ lattice with norm less than 3, which results in 2 bits per weight.
-All we do is look up in to this codebook.
-There is no sign flipping magic and WYSIWYG.
-Amazing.
-
 #### Codebook Errors
 
 To show the optimality of our lattice codebooks, we plotted the minimum achievable elementwise MSE of quantizing a $n$-dimensional multivariate Gaussian to various $k$ bit codebooks.
@@ -219,28 +211,23 @@ $$y = \min_{s \in \mathbb{R}^+} \frac{1}{n}\left\|\mbox{quantize}\left(\frac{\ma
 [lattice_err]: img/lattice_err.png "Lattice Errors"
 ![Lowest element-wise mean squared error (MSE) achievable for quantizing a multivariate Gaussian to various codebooks. The $E_8$ lattice achieves the [densest unit-sphere packing in 8 dimensions](https://en.wikipedia.org/wiki/Kissing_number) and our derivative codebooks have the lowest MSE.][lattice_err]
 
-In the 8 and 4 dimensional settings, the $E_8$ and $D_4$ codebooks achieve lower MSEs than the half integer codebooks.
-Furthermore, this figure shows the importance of having a large number of columns $n$.
+The $E_8$ codebook achieves lower MSEs than all other codebooks, including those based on the $D_4$ lattice that achieves the 4 dimensional kissing number.
+This figure also shows the importance of having a large number of columns $n$.
 Increasing the number of columns decreases the error for the half integer grid, as the resulting codebook is more "round."
 Since the E8P codebook is actually the union of two shifted codebooks, each of which is a ball intersected with $\hat{D_8}$, it is not perfectly round.
 This is reflected in the MSE plot, where it sits slightly above the $E_8$ line.
 However, there does not exist a $E_8$ codebook with exactly 2 bits, so E8P is still practically superior.
-Finally, we calculate that by switching from $D_4$ to $E_8$, we save an average of 0.1 bits while maintaining the same MSE, which is a significant percentage of the total number of bits at extreme-compression regimes.
 
 ### Results
 
 Here, we present quantization results using QuIP# on Llama 1 and 2 models.
 All models were quantized using the Hadamard transform for incoherence processing and a weight scale factor of roughly 0.9 times the optimal scale for a multivariate Gaussian to compensate for inter-layer interactions.
 Furthermore, all Llama 2 models were evaluated using a context lenth of 4096 and all Llama 1 models were evaluated with context length 2048; these numbers match the context length the models were trained with.
-These models can be found in our [Hugging Face repository](https://huggingface.co/relaxml).
+These and other models can be found in our [Hugging Face repository](https://huggingface.co/relaxml).
 
-The first table contains results for all Llama 1 and 2 models when quantized to 2 bits using the E8P codebook.
+The table below contains results for all Llama 1 and 2 models when quantized to 2 bits using the E8P codebook.
 QuIP# achieves excellent performance across all model sizes on both language modeling and zero shot tasks.
 Furthermore, on the zero-shot tasks (ArcC, ArcE, BoolQ, PiQA, WinoGrande), QuIP# models achieve near-native performance with minimal degradation.
-The second table contains a comparison of the E8P and D4 codebooks.
-As expected, E8P-quantized models outperform D4 models on almost all tasks.
-We also include the 4 bit Half Integer 1 Column codebook as a reference to what is possible at 4 bits with just incoherence processing and no lattice codebooks.
-
 Additional results are available [here](https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing).
 
 
@@ -264,21 +251,4 @@ Additional results are available [here](https://docs.google.com/spreadsheets/d/1
 |    1-7B   |    fp16   |      7.343      |       5.677       |      0.415      |      0.525      |       0.731       |      0.774      |         0.670         |
 |  1-7B | QuIP# |    10.927   |     8.146     |    0.347    |    0.471    |     0.673     |    0.724    |       0.621       |
 :QuIP# results across all Llama 1 and 2 models. QuIP# achieves near-native performance at 2 bits on language modeling (C4, Wiki) and zero shot (ArcC, ArcE, BoolQ, PiQA, WinoGrande) tasks.
-</div>
-
-<div style="margin-left: -10%;
-            margin-right: auto;
-            width: 120%;">
-
-| Model | Codebook | Bits | C4$\downarrow$ | Wiki$\downarrow$ | ArcC$\uparrow$ | ArcE$\uparrow$ | BoolQ$\uparrow$ | PiQA$\uparrow$ | WinoGrande$\uparrow$ |
-|:-------:|:-------:|:---:|:----------:|:------------------:|:----------------:|:----------------:|:----------------------:|:---------------------:|:-------------------------------:|
-| 2-70B | --       | 16   |          5.533 |            3.120 |          0.480 |          0.597 |           0.766 |          0.809 |                0.768 |
-| 2-70B | E8P      | 2    |    **6.535**   |     **4.156**    |    **0.469**   |    **0.595**   |      0.795      |    **0.785**   |       **0.740**      |
-| 2-70B | D4       | 2    |          6.797 |            4.408 |          0.456 |          0.575 |       **0.799** |          0.783 |                0.737 |
-| 2-70B | Half Int | 4    |          5.606 |            3.216 |          0.494 |          0.601 |           0.777 |          0.806 |                0.762 |
-| 1-65b | --       | 16   |      5.811     |       3.532      |      0.463     |      0.588     |      0.823      |      0.809     |         0.771        |
-| 1-65b | E8P      | 2    |    **6.749**   |     **4.573**    |    **0.435**   |      0.566     |    **0.831**    |    **0.792**   |       **0.756**      |
-| 1-65b | D4       | 2    |  6.954         |    4.740         |   0.433        |   **0.571**    |     0.825       |     0.791      |        0.732         |
-| 1-65b | Half Int | 4    |          5.877 |            3.633 |          0.461 |          0.587 |           0.832 |          0.810 |                0.763 |
-:Quantization results on Llama 1-65B and 2-70B for various codebooks. The E8P codebook outperforms the D4 codebook on most tasks. Bold indicates the best 2 bit result within a specific model.
 </div>
