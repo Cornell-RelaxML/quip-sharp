@@ -147,7 +147,7 @@ Thus, it is important to design codebooks that both have relatively large $n$ wh
 Geometric lattices are suitable bases for such codebooks as most lattices have inherent symmetries and certain lattices achieve optimal bin packing densities.
 For example, our E8P codebook based on the $E_8$ lattice has $2^{16}$ entries but only requires looking up into a size $2^8$ codebook due to symmetries inherent to the $E_8$ lattice itself -- more on this later.
 In QuIP#, we present the E8P codebook based on the 8-dimensional $E_8$ lattice.
-These lattice achieves the 8 dimensional kissing number, or the maximum number of unit balls touching a central unit ball in 8 dimensions.
+This lattice achieves the 8 dimensional kissing number, or the maximum number of unit balls touching a central unit ball in 8 dimensions.
 Interestingly, Maryna Viazovska recently won the Fields Medal in 2022 “for the proof that the $E_8$ lattice provides the densest packing of identical spheres in 8 dimensions.”
 
 ![The 2D kissing number is 6, which is achieved by this packing configuration. Image from Wikipedia.](img/kissing2d.png)
@@ -211,7 +211,7 @@ $$y = \min_{s \in \mathbb{R}^+} \frac{1}{n}\left\|\mbox{quantize}\left(\frac{\ma
 [lattice_err]: img/lattice_err.png "Lattice Errors"
 ![Lowest element-wise mean squared error (MSE) achievable for quantizing a multivariate Gaussian to various codebooks. The $E_8$ lattice achieves the [densest unit-sphere packing in 8 dimensions](https://en.wikipedia.org/wiki/Kissing_number) and our derivative codebooks have the lowest MSE.][lattice_err]
 
-The $E_8$ codebook achieves lower MSEs than all other codebooks, including those based on the $D_4$ lattice that achieves the 4 dimensional kissing number.
+The $E_8$-based codebooks achieves lower MSEs than all other codebooks, including those based on the $D_4$ lattice that achieves the 4 dimensional kissing number.
 This figure also shows the importance of having a large number of columns $n$.
 Increasing the number of columns decreases the error for the half integer grid, as the resulting codebook is more "round."
 Since the E8P codebook is actually the union of two shifted codebooks, each of which is a ball intersected with $\hat{D_8}$, it is not perfectly round.
