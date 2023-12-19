@@ -29,4 +29,5 @@ if __name__ == "__main__":
         multi_commits=args.no_multi_commits,
         multi_commits_verbose=True,
         token=args.write_token,
+        create_pr=True, # creates a PR. You must manually merge the PR in
     )
