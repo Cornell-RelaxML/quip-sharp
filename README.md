@@ -10,7 +10,7 @@ We also provide a full codebase that allows users to quantize and deploy their o
 | OPTQ      | 3 bit     |   4.577   |   6.838   |   0.544   | **0.786** |
 | OPTQ      | 2 bit     |  109.820  |   62.692  |   0.253   |   0.505   |
 | QuIP      | 2 bit     |   5.574   |   8.268   |   0.544   |   0.751   |
-| **QuIP#** | **2 bit** | **4.159** | **6.529** | **0.595** |   0.786   |
+| **QuIP#** | **2 bit** | **4.159** | **6.529** | **0.595** | **0.786** |
 
 Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2 bits, outperforming all other presented baselines.
 
@@ -18,8 +18,8 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
 
 ## News
 
-- We merged in a faster E8P kernel that (with CUDA graphs) is around twice as fast as before. Make sure to pull the latest code and models (should be version 1) and rebuild the `quiptools` package to get the faster kernel! As a reminder, `hf.generate()` is incompatible with CUDA graphs so the generation speed in `interactive_gen.py` is not representative of reality.
-- We fixed a duplicated entry in the E8P codebook and updated the perplexity/zeroshot tables.
+- We merged in a faster E8P kernel that (with CUDA graphs) is around twice as fast as before. Make sure to pull the latest code and models and recompile `quiptools` to get the faster kernel. As a reminder, `hf.generate()` does not work with CUDA graphs so the generation speed in `interactive_gen.py` is not representative of reality.
+- We fixed a duplicated entry in the E8P codebook and updated the result tables.
 
 ## Installation
 
@@ -40,11 +40,19 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
     - `--scale_override <quantization scale parameter>`. 
     We suggest the following scale parameters for each codebook: `{E8P12: 0.9, D4: 1.1, HI4B1C: 2.7}`, however you may want to play around with scales if quantizing your own models. 
 - To convert a quantized model to the HF format: `CUDA_VISIBLE_DEVICES=0 python hfize_llama.py --quantized_path <output path of quantize_llama.py> --hf_output_path <path to save HF version>`
-- To generate your own Hessians for a Llama architecture model: `python hessian_offline_llama --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags.
+- To generate your own Hessians for a Llama architecture model: `python hessian_offline_llama --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags. **Hessian calculation uses a `fp64` accumulator for numerical accuracy. Running this script on a device with slow `fp64` capabilities will take longer.**
     - `--batch_size` Batch size per GPU. Tune so you don't run out of memory.
     - `--devset_size` Size of devset to use for Hessian generation.
     - `--ctx_size` Context size (sequence length) to use for Hessian generation.
     - `--base_model` Same as in `quantize_llama.py`.
+
+### I want to quantize a non-Llama architecture model, what do I do?
+
+Currently, `hessian_offline_llama.py`, `quantize_llama.py`, and `hfize_llama.py` are written for the Llama architecture. However, the only "special" things they do are identify the relevant `nn.Linear` layers that need to be quantized (q/k/v/o/up/gate/down), inject Hessian hooks, and quantize them. 
+If you want to quantize a non-Llama architecture model, you will need to find the relevant `nn.Linear` files and make your own hessian_offline/quantize/hfize files. This should be pretty straightforward and feel free to open a GitHub ticket if you run into any issues.
+You will also need copy `modeling_<architecture>.py` from the HF source into the `models/` folder and replace the relevant `nn.Linear` layers with `QuantizedLinear` layers (see how `models/llama.py` does it).
+Our current `quantize_llama.py` implementation fuses the q/k/v layers and the up/gate layers for increased speed since they share the same Hessians. However, this is not a requirement and you can also quantize those layers individually.
+
     
 ## Evaluation
 
@@ -65,7 +73,6 @@ All it does is call HF's `.generate()` function.
 We provide quantized models available on HF.
 To use them, pass the given HF repo_id to `--hf_path`.
 We recommend using the `E8P` codebook which quantizes to 2 bits per weight, which gives the best quantization at 2 bits.
-Other options are the `D4` codebook at 2 bits, and the half-integer grid `HI4B1C` codebook at 4 bits.
 See our blogpost for details on the codebooks.
 
 | Lattice Codebook | Base Model  | Weight Bits | HF repo_id |
@@ -82,13 +89,6 @@ See our blogpost for details on the codebooks.
 |                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
 |		   | Mistral 7b  | 2	       | [`relaxml/Mistral-7b-E8P-2Bit`](https://huggingface.co/relaxml/Mistral-7b-E8P-2Bit)   |
 |		   | OpenHermes 2.5 | 2	       | [`relaxml/Openhermes-7b-E8P-2Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8P-2Bit)   |
-| D4               | Llama 2 70b | 2           | [`relaxml/Llama-2-70b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-D4-2Bit) |
-|                  | Llama 2 13b | 2           | [`relaxml/Llama-2-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-D4-2Bit) |
-|                  | Llama 2 7b  | 2           | [`relaxml/Llama-2-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-D4-2Bit)   |
-|                  | Llama 1 65b | 2           | [`relaxml/Llama-1-65b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-D4-2Bit) |
-|                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-D4-2Bit) |
-|                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-D4-2Bit) |
-|                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-D4-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-D4-2Bit)   |
 | HI               | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-70b-HI-4Bit-Packed) |
 |                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-13b-HI-4Bit-Packed) |
 |                  | Llama 2 7b  | 4           | [`relaxml/Llama-2-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-7b-HI-4Bit-Packed)   |
