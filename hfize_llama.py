@@ -48,10 +48,9 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(model_config._name_or_path)
 
     model_type = model_config.model_type
-    fused = model_config.quip_params.get('fused', True)
     model_config.quip_params['model_version'] = MODEL_VERSION
 
-    if model_type == 'llama' and fused:
+    if model_type == 'llama':
         model_cls = llama_fuse
     elif model_type == 'mistral':
         model_cls = MistralForCausalLM
@@ -69,80 +68,32 @@ def main(args):
         layer = model.model.layers[ii]
         cpu = torch.device('cpu')
 
-        if fused:
-            glog.info(f'loading layer {ii} qkv')
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_qkv.pt', map_location=cpu)
-            layer.self_attn.qkv_proj.fuse_scales[0].copy_(saved_layer['W_q_scale'])
-            layer.self_attn.qkv_proj.fuse_scales[1].copy_(saved_layer['W_k_scale'])
-            layer.self_attn.qkv_proj.fuse_scales[2].copy_(saved_layer['W_v_scale'])
-            layer.self_attn.qkv_proj.Wscale.copy_(saved_layer['Wscale'])
-            unpack_quip(layer.self_attn.qkv_proj, saved_layer, codebook_id, codesz)
+        glog.info(f'loading layer {ii} qkv')
+        saved_layer = torch.load(f'{args.quantized_path}/{ii}_qkv.pt', map_location=cpu)
+        layer.self_attn.qkv_proj.fuse_scales[0].copy_(saved_layer['W_q_scale'])
+        layer.self_attn.qkv_proj.fuse_scales[1].copy_(saved_layer['W_k_scale'])
+        layer.self_attn.qkv_proj.fuse_scales[2].copy_(saved_layer['W_v_scale'])
+        layer.self_attn.qkv_proj.Wscale.copy_(saved_layer['Wscale'])
+        unpack_quip(layer.self_attn.qkv_proj, saved_layer, codebook_id, codesz)
 
-            glog.info(f'loading layer {ii} up')
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_up.pt', map_location=cpu)
-            layer.mlp.upgate_proj.fuse_scales[0].copy_(saved_layer['W_up_scale'])
-            layer.mlp.upgate_proj.fuse_scales[1].copy_(saved_layer['W_gate_scale'])
-            layer.mlp.upgate_proj.Wscale.copy_(saved_layer['Wscale'])
-            unpack_quip(layer.mlp.upgate_proj, saved_layer, codebook_id, codesz)
+        glog.info(f'loading layer {ii} up')
+        saved_layer = torch.load(f'{args.quantized_path}/{ii}_up.pt', map_location=cpu)
+        layer.mlp.upgate_proj.fuse_scales[0].copy_(saved_layer['W_up_scale'])
+        layer.mlp.upgate_proj.fuse_scales[1].copy_(saved_layer['W_gate_scale'])
+        layer.mlp.upgate_proj.Wscale.copy_(saved_layer['Wscale'])
+        unpack_quip(layer.mlp.upgate_proj, saved_layer, codebook_id, codesz)
 
-            glog.info(f'loading layer {ii} o')
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_o.pt', map_location=cpu)
-            layer.self_attn.o_proj.Wscale.copy_(saved_layer['W_o_scale'] * saved_layer['Wscale'])
-            unpack_quip(layer.self_attn.o_proj, saved_layer, codebook_id, codesz)
+        glog.info(f'loading layer {ii} o')
+        saved_layer = torch.load(f'{args.quantized_path}/{ii}_o.pt', map_location=cpu)
+        layer.self_attn.o_proj.Wscale.copy_(saved_layer['W_o_scale'] * saved_layer['Wscale'])
+        unpack_quip(layer.self_attn.o_proj, saved_layer, codebook_id, codesz)
 
-            glog.info(f'loading layer {ii} down')
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_down.pt', map_location=cpu)
-            layer.mlp.down_proj.Wscale.copy_(saved_layer['W_down_scale'] * saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.mlp.down_proj.ocs_dupe_inds.copy_(torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.mlp.down_proj, saved_layer, codebook_id, codesz)
-
-        else:
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_q.pt', map_location=cpu)
-            layer.self_attn.q_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.self_attn.q_proj.ocs_dupe_inds.copy_(
-                    torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.self_attn.q_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_k.pt', map_location=cpu)
-            layer.self_attn.k_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.self_attn.k_proj.ocs_dupe_inds.copy_(
-                    torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.self_attn.k_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_v.pt', map_location=cpu)
-            layer.self_attn.v_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.self_attn.v_proj.ocs_dupe_inds.copy_(
-                    torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.self_attn.v_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_o.pt', map_location=cpu)
-            layer.self_attn.o_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.self_attn.o_proj.ocs_dupe_inds.copy_(
-                    torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.self_attn.o_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_up.pt', map_location=cpu)
-            layer.mlp.up_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.mlp.up_proj.ocs_dupe_inds.copy_(torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.mlp.up_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_gate.pt', map_location=cpu)
-            layer.mlp.gate_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.mlp.gate_proj.ocs_dupe_inds.copy_(torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.mlp.gate_proj, saved_layer, codebook_id, codesz)
-
-            saved_layer = torch.load(f'{args.quantized_path}/{ii}_down.pt', map_location=cpu)
-            layer.mlp.down_scale.copy_(saved_layer['W_scale']*saved_layer['Wscale'])
-            if model_config.quip_params['outlier_channel_split']:
-                layer.mlp.down_proj.ocs_dupe_inds.copy_(torch.tensor(saved_layer['ocs_dupe_inds']))
-            unpack_quip(layer.mlp.down_proj, saved_layer, codebook_id, codesz)
+        glog.info(f'loading layer {ii} down')
+        saved_layer = torch.load(f'{args.quantized_path}/{ii}_down.pt', map_location=cpu)
+        layer.mlp.down_proj.Wscale.copy_(saved_layer['W_down_scale'] * saved_layer['Wscale'])
+        if model_config.quip_params['outlier_channel_split']:
+            layer.mlp.down_proj.ocs_dupe_inds.copy_(torch.tensor(saved_layer['ocs_dupe_inds']))
+        unpack_quip(layer.mlp.down_proj, saved_layer, codebook_id, codesz)
 
     glog.info(f'saving model...')
     model.save_pretrained(args.hf_output_path, safe_serialization=True)
