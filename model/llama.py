@@ -48,6 +48,7 @@ if is_flash_attn_available():
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 
 from lib.linear.quantized_linear import QuantizedLinear
+from lib.linear.fused_quantized_linear import FusedQuantizedLinear
 from .version import check_model_version
 
 logger = logging.get_logger(__name__)
@@ -225,15 +226,17 @@ class LlamaMLP(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.upgate_proj = QuantizedLinear(self.hidden_size,
-                                           self.intermediate_size * 2,
-                                           config.quip_params['codesz'],
-                                           config.quip_params.get('packsz', 1),
-                                           config.quip_params.get('pack_out', False),
-                                           config.quip_params['idx_dtype'],
-                                           config.quip_params.get('codebook_version', 0),
-                                           rank=config.quip_params['lora_rank'],
-                                           rescale_WH=config.quip_params['rescale_WH'])
+        self.upgate_proj = FusedQuantizedLinear(
+            -1, (self.intermediate_size, self.intermediate_size),
+            self.hidden_size,
+            self.intermediate_size * 2,
+            config.quip_params['codesz'],
+            config.quip_params.get('packsz', 1),
+            config.quip_params.get('pack_out', False),
+            config.quip_params['idx_dtype'],
+            config.quip_params.get('codebook_version', 0),
+            rank=config.quip_params['lora_rank'],
+            rescale_WH=config.quip_params['rescale_WH'])
         self.down_proj = QuantizedLinear(
             self.config.quip_params['ocs_down_size'] if \
             self.config.quip_params['outlier_channel_split'] else self.intermediate_size,
@@ -246,24 +249,14 @@ class LlamaMLP(nn.Module):
             outlier_channel_split=self.config.quip_params['outlier_channel_split'],
             rank=self.config.quip_params['lora_rank'],
             rescale_WH=self.config.quip_params['rescale_WH'])
-        self.register_buffer('up_scale', nn.Parameter(torch.ones(())))
-        self.register_buffer('gate_scale', nn.Parameter(torch.ones(())))
-        self.register_buffer('down_scale', nn.Parameter(torch.ones(())))
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
         if self.config.pretraining_tp > 1:
             raise Exception
-        else:
-            upgate_proj = self.upgate_proj(x.to(torch.float32))
-            up_proj = self.up_scale * upgate_proj[...,
-                                                  0:self.intermediate_size]
-            gate_proj = self.gate_scale * upgate_proj[
-                ..., self.intermediate_size:(self.intermediate_size * 2)]
-            down_proj = self.down_scale * self.down_proj(
-                self.act_fn(gate_proj) * up_proj)
 
-        return down_proj.half()
+        up_proj, gate_proj = self.upgate_proj(x.to(torch.float32))
+        return self.down_proj(self.act_fn(gate_proj) * up_proj).half()
 
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -297,7 +290,12 @@ class LlamaAttention(nn.Module):
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
                 f" and `num_heads`: {self.num_heads})."
             )
-        self.qkv_proj = QuantizedLinear(
+                   
+        self.qkv_proj = FusedQuantizedLinear(
+            -1,
+            (self.num_heads*self.head_dim,
+             self.num_key_value_heads*self.head_dim,
+             self.num_key_value_heads*self.head_dim),
             self.hidden_size, (self.num_heads * self.head_dim) +
             (self.num_key_value_heads * self.head_dim) +
             (self.num_key_value_heads * self.head_dim),
@@ -308,7 +306,7 @@ class LlamaAttention(nn.Module):
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
             rescale_WH=config.quip_params['rescale_WH'])
-
+        
         self.o_proj = QuantizedLinear(self.num_heads * self.head_dim,
                                       self.hidden_size,
                                       config.quip_params['codesz'],
@@ -319,10 +317,6 @@ class LlamaAttention(nn.Module):
                                       rank=config.quip_params['lora_rank'],
                                       rescale_WH=config.quip_params['rescale_WH'])
 
-        self.register_buffer('q_scale', nn.Parameter(torch.ones(())))
-        self.register_buffer('k_scale', nn.Parameter(torch.ones(())))
-        self.register_buffer('v_scale', nn.Parameter(torch.ones(())))
-        self.register_buffer('o_scale', nn.Parameter(torch.ones(())))
         self._init_rope()
 
     def _init_rope(self):
@@ -370,19 +364,7 @@ class LlamaAttention(nn.Module):
         if self.config.pretraining_tp > 1:
             assert (False)
         else:
-            qkv_states = self.qkv_proj(hidden_states.to(torch.float32))
-            query_states = self.q_scale * qkv_states[..., 0:(self.num_heads *
-                                                             self.head_dim)]
-            key_states = self.k_scale * qkv_states[..., (
-                self.num_heads * self.head_dim):(
-                    (self.num_heads * self.head_dim) +
-                    (self.num_key_value_heads * self.head_dim))]
-            value_states = self.v_scale * qkv_states[..., (
-                (self.num_heads * self.head_dim) +
-                (self.num_key_value_heads * self.head_dim)):(
-                    (self.num_heads * self.head_dim) +
-                    (self.num_key_value_heads * self.head_dim) +
-                    (self.num_key_value_heads * self.head_dim))]
+            query_states, key_states, value_states = self.qkv_proj(hidden_states.to(torch.float32))
             query_states = query_states.half()
             key_states = key_states.half()
             value_states = value_states.half()
@@ -439,7 +421,7 @@ class LlamaAttention(nn.Module):
         if self.config.pretraining_tp > 1:
             assert (False)
         else:
-            attn_output = (self.o_scale * self.o_proj(attn_output)).half()
+            attn_output = self.o_proj(attn_output).half()
 
         if not output_attentions:
             attn_weights = None
@@ -468,19 +450,7 @@ class LlamaFlashAttention2(LlamaAttention):
         output_attentions = False
 
         bsz, q_len, _ = hidden_states.size()
-        qkv_states = self.qkv_proj(hidden_states.to(torch.float32))
-        query_states = self.q_scale * qkv_states[..., 0:(self.num_heads *
-                                                         self.head_dim)]
-        key_states = self.k_scale * qkv_states[..., (
-            self.num_heads * self.head_dim):(
-                (self.num_heads * self.head_dim) +
-                (self.num_key_value_heads * self.head_dim))]
-        value_states = self.v_scale * qkv_states[..., (
-            (self.num_heads * self.head_dim) +
-            (self.num_key_value_heads * self.head_dim)):(
-                (self.num_heads * self.head_dim) +
-                (self.num_key_value_heads * self.head_dim) +
-                (self.num_key_value_heads * self.head_dim))]
+        query_states, key_states, value_states = self.qkv_proj(hidden_states.to(torch.float32))
         query_states = query_states.half()
         key_states = key_states.half()
         value_states = value_states.half()
@@ -538,7 +508,7 @@ class LlamaFlashAttention2(LlamaAttention):
         )
 
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size).contiguous()
-        attn_output = (self.o_scale * self.o_proj(attn_output)).half()
+        attn_output = self.o_proj(attn_output).half()
 
         if not output_attentions:
             attn_weights = None

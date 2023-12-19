@@ -9,6 +9,8 @@
 #include <cuda_fp16.h>
 #include <mma.h>
 
+#include <cuda_pipeline.h>
+
 #include <ATen/ATen.h>
 #include <ATen/Context.h>
 #include <ATen/Dispatch.h>
@@ -40,222 +42,235 @@ __host__ static inline void gpuAssert(cudaError_t code, const char *file, int li
     }
 }
 
-#define BLOCK_SIZE 512
-#define WARP_SIZE 32
-
-
-__device__ static inline uint64_t decode8weights(
-    uint16_t weight_compressed,
-    const int64_t *__restrict__ codebook_abs
-) {
-
-    uint32_t bit_shift = (weight_compressed & 1)^1;
-    uint8_t bits_sign = (weight_compressed >> 1) & ((1 << 7) - 1);
-    uint8_t bits_abs = (weight_compressed >> 8) & ((1 << 9) - 1);
-
-    int64_t packed_ = codebook_abs[bits_abs];
-    uint32_t packed[2];
-    memcpy(packed, &packed_, sizeof(packed));
-
-    // TODO: optimize this by redefining the bit pattern
-    uint32_t parity = __popc(packed[0] & 0x04040404) ^ __popc(packed[1]&0x04040404);
-    uint8_t sign_vec = bits_sign | ((__popc(bits_sign) ^ parity) << 7);
-    uint32_t decoded_sign[2];
-    decoded_sign[0] = sign_vec * 0x08040201ll;
-    decoded_sign[1] = sign_vec * 0x80402010ll;
-    decoded_sign[0] &= 0x80808080;
-    decoded_sign[1] &= 0x80808080;
-    decoded_sign[0] >>= 7;
-    decoded_sign[1] >>= 7;
-    decoded_sign[0] *= 255 - 3;
-    decoded_sign[1] *= 255 - 3;
-    packed[0] ^= decoded_sign[0];
-    packed[1] ^= decoded_sign[1];
-    packed[0] |= 0x01010101;
-    packed[1] |= 0x01010101;
-    packed[0] -= bit_shift * 0x02020202;
-    packed[1] -= bit_shift * 0x02020202;
-
-    memcpy(&packed_, packed, sizeof(packed));
-
-    return packed_;
+__device__ static inline uint32_t add_as_half2(uint32_t x, uint32_t y) {
+    uint32_t z;
+    asm("add.f16x2 %0,%1,%2;" : "=r"(z) : "r"(x), "r"(y));
+    return z;
 }
 
 
-/*
-llama 2 70B:
-M N K
-1 8192 8192
-1 57344 8192
-1 8192 28672
-1 10240 8192
-*/
-template <typename scalar_t>
+__device__ static inline uint32_t mask_lop3(uint32_t x, uint32_t m0, uint32_t m1) {
+    uint32_t y;
+    asm("lop3.b32 %0, %1, %2, %3, 0xEA;" : "=r"(y) : "r"(x), "r"(m0), "r"(m1));
+    return y;
+    // return (x & m0) | m1;
+}
+
+#define BASE_OFFSET 0xd080d080
+#define XMASK 0x00f000f0
+#define WMASK 0x50085008
+
+
 __global__ static void
-__launch_bounds__(BLOCK_SIZE)
-decode_matmul_e8p_kernel(
-    scalar_t *__restrict__ output,
-    const scalar_t *__restrict__ x,
-    const int16_t *__restrict__ weights_compressed,
-    const int64_t *__restrict__ codebook_abs,
-    int64_t M,
-    int64_t N,
-    int64_t K
+// __launch_bounds__(1024, 1024)
+decode_matvec_e8p_kernel(
+    float *__restrict__ output,
+    const uint2 *__restrict__ input,
+    const uint2 *__restrict__ weights_compressed,
+    const uint32_t *__restrict__ codebook_abs,
+    int N,
+    int K
 ) {
-    __shared__ int64_t codebook_local[256];
-    if (threadIdx.x < 256) {
-    codebook_local[threadIdx.x] = codebook_abs[threadIdx.x];
-    }
-    __syncthreads();
+    int warpId = threadIdx.y;
+    int laneId = threadIdx.x;
 
-    int64_t warpId = threadIdx.x / WARP_SIZE;
-    int64_t laneId = threadIdx.x % WARP_SIZE;
+    // __shared__ float sum_scratch[16*32];
 
-    // each thread adds 8 activation-weight products
-    const int64_t unroll_k = 2;
-    const int64_t pack = 8;
-    const int64_t elem_per_thread = pack * unroll_k;
-    int64_t warps_per_elem = K / WARP_SIZE / elem_per_thread;
-    const int64_t unroll_n = 16;
-    const int64_t local_k = 1; // in terms of warp size. 32 threads of elem_per_thread fma each, dont set below 1 because of __shfl_down_sync
-    int64_t local_n = BLOCK_SIZE / WARP_SIZE / local_k;
-    int64_t grid_N = N / unroll_n;
+    // __shared__ uint32_t codebook_local[256*32];
+    // for (int icb = warpId; icb < 256; icb += 32) {
+    //     codebook_local[icb*32 + laneId] = codebook_abs[icb];
+    // }
+    // __syncthreads();
 
-    __shared__ scalar_t accum_scratch[BLOCK_SIZE / WARP_SIZE];
-    bool SHARED_REDUCE = false;
+    __shared__ uint2 shared_weights[1024*2];
 
-    for (int64_t warpPos = blockIdx.x * BLOCK_SIZE/WARP_SIZE + warpId;
-            warpPos < M * grid_N * warps_per_elem;
-            warpPos += gridDim.x * BLOCK_SIZE/WARP_SIZE) {
+    for (int iin = blockIdx.x; iin < (N >> 4); iin += gridDim.x) {
 
-        int64_t local_n_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) / local_k;
-        int64_t local_k_i = (warpPos% (BLOCK_SIZE / WARP_SIZE)) % local_k;
-        int64_t m = (warpPos / warps_per_elem) / (grid_N);
-        int64_t k_ = warpPos % (warps_per_elem * local_n);
-        int64_t k = k_ / (local_k * local_n) * local_k + k_ % local_k;
+        float z0 = 0.0;
+        float z1 = 0.0;
+        float z2 = 0.0;
+        float z3 = 0.0;
 
-        scalar_t this_activations[elem_per_thread];
-#pragma unroll
-        for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
-            const scalar_t *activations = x + m * K + (k * WARP_SIZE + laneId) * elem_per_thread + unroll_k_i * pack;
-            if constexpr (std::is_same<scalar_t, float>::value) {
-                const float4 *first_half = reinterpret_cast<const float4 *>(activations);
-                __builtin_assume_aligned(first_half, 16);
-                this_activations[unroll_k_i * pack + 0] = first_half->x;
-                this_activations[unroll_k_i * pack + 1] = first_half->y;
-                this_activations[unroll_k_i * pack + 2] = first_half->z;
-                this_activations[unroll_k_i * pack + 3] = first_half->w;
-                const float4 *second_half = reinterpret_cast<const float4 *>(activations + 4);
-                __builtin_assume_aligned(second_half, 16);
-                this_activations[unroll_k_i * pack + 4] = second_half->x;
-                this_activations[unroll_k_i * pack + 5] = second_half->y;
-                this_activations[unroll_k_i * pack + 6] = second_half->z;
-                this_activations[unroll_k_i * pack + 7] = second_half->w;
-            } else {
-                for (int64_t activation_i = 0; activation_i < pack; activation_i++) {
-                    this_activations[unroll_k_i * pack + activation_i] = activations[activation_i];
-                }
+        // int shwo = laneId + 32*warpId;
+
+        // __pipeline_memcpy_async(shared_weights + shwo, weights_compressed + laneId + 32*warpId + 1024*0 + (K >> 1)*iin, 8);
+        // __pipeline_commit();
+
+        for (int iik = warpId; iik < (K >> 6); iik += 32) {
+            // if (iik + 1 < (K >> 11)) {
+            //     __pipeline_memcpy_async(shared_weights + (shwo ^ 1024), weights_compressed + laneId + 32*iik + 1024 + (K >> 1)*iin, 8);
+            //     __pipeline_commit();
+            //     __pipeline_wait_prior(1);
+            //     shwo = shwo ^ 1024;
+            // }
+            // else {
+            //     __pipeline_wait_prior(0);
+            // }
+
+            // uint2 w_compr = shared_weights[shwo]; // weights_compressed[laneId + 32*warpId + 1024*iik + (K >> 1)*iin];
+            uint2 w_compr = weights_compressed[laneId + 32*iik + (K >> 1)*iin];
+            uint32_t a = w_compr.x;
+            uint32_t b = w_compr.y;
+
+            uint32_t s = b;
+            s = s ^ (s >> 4);
+            s = s ^ (s >> 8);
+            s = s ^ (s >> 16);
+            uint32_t sb = (s & 15);
+            s = b ^ sb;
+            sb = sb | (sb << 16);
+
+            uint32_t input_to_warp = ((const uint32_t*)(&input[16*iik]))[laneId];
+            uint32_t shifted_laneId = (laneId & 3) << 3;
+
+            /// BLOCK 01
+            {
+            uint32_t x = codebook_abs[(a >> 0) & 255];
+            x = x ^ ((s & 0x11111111) * 14);
+
+            uint32_t o = BASE_OFFSET | ((sb & 0x00010001) << 4);
+
+            uint32_t w00 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w01 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w02 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w03 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            x = codebook_abs[(a >> 8) & 255];
+            x = x ^ ((s & 0x22222222) * 7);
+
+            o = BASE_OFFSET | ((sb & 0x00020002) << 3);
+            
+            uint32_t w10 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w11 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w12 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w13 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            // uint2 x_in = input[0 + (laneId & 3)*4 + 16*warpId + 16*32*iik];
+            // uint32_t x_in0 = x_in.x;
+            // uint32_t x_in1 = x_in.y;
+
+            uint32_t x_in0 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 0);
+            uint32_t x_in1 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 1);
+
+            asm(
+                "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+                " { %0, %1, %2, %3 },"
+                " { %4, %5, %6, %7 },"
+                " { %8, %9 },"
+                " { %0, %1, %2, %3 };"
+                : "+f"(z0), "+f"(z1), "+f"(z2), "+f"(z3)
+                : "r"(w00), "r"(w10), "r"(w01),  "r"(w11),
+                  "r"(x_in0), "r"(x_in1)
+            );
+
+
+            // x_in = input[1 + (laneId & 3)*4 + 16*warpId + 16*32*iik];
+            // x_in0 = x_in.x;
+            // x_in1 = x_in.y;
+
+            x_in0 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 2);
+            x_in1 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 3);
+
+            asm(
+                "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+                " { %0, %1, %2, %3 },"
+                " { %4, %5, %6, %7 },"
+                " { %8, %9 },"
+                " { %0, %1, %2, %3 };"
+                : "+f"(z0), "+f"(z1), "+f"(z2), "+f"(z3)
+                : "r"(w02), "r"(w12), "r"(w03), "r"(w13),
+                  "r"(x_in0), "r"(x_in1)
+            );
+            }
+            /// BLOCK 23 
+            {
+            uint32_t x = codebook_abs[(a >> 16) & 255];
+            s = s >> 2;
+            x = x ^ ((s & 0x11111111) * 14);
+
+            uint32_t o = BASE_OFFSET | ((sb & 0x00040004) << 2);
+            
+            uint32_t w00 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w01 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w02 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w03 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            x = codebook_abs[(a >> 24) & 255];
+            x = x ^ ((s & 0x22222222) * 7);
+
+            o = BASE_OFFSET | ((sb & 0x00080008) << 1); 
+
+            uint32_t w10 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w11 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w12 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w13 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+
+            // uint2 x_in = input[2 + (laneId & 3)*4 + 16*warpId + 16*32*iik];
+            // uint32_t x_in0 = x_in.x;
+            // uint32_t x_in1 = x_in.y;
+
+            uint32_t x_in0 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 4);
+            uint32_t x_in1 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 5);
+
+            asm(
+                "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+                " { %0, %1, %2, %3 },"
+                " { %4, %5, %6, %7 },"
+                " { %8, %9 },"
+                " { %0, %1, %2, %3 };"
+                : "+f"(z0), "+f"(z1), "+f"(z2), "+f"(z3)
+                : "r"(w00), "r"(w10), "r"(w01), "r"(w11),
+                  "r"(x_in0), "r"(x_in1)
+            );
+
+
+            // x_in = input[3 + (laneId & 3)*4 + 16*warpId + 16*32*iik];
+            // x_in0 = x_in.x;
+            // x_in1 = x_in.y;
+
+            x_in0 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 6);
+            x_in1 = __shfl_sync(FULL_MASK, input_to_warp, shifted_laneId | 7);
+
+            asm(
+                "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+                " { %0, %1, %2, %3 },"
+                " { %4, %5, %6, %7 },"
+                " { %8, %9 },"
+                " { %0, %1, %2, %3 };"
+                : "+f"(z0), "+f"(z1), "+f"(z2), "+f"(z3)
+                : "r"(w02), "r"(w12), "r"(w03), "r"(w13),
+                  "r"(x_in0), "r"(x_in1)
+            );
             }
         }
-        for (int64_t unroll_n_i = 0; unroll_n_i < unroll_n; unroll_n_i++) {
-            scalar_t accumulator = 0;
-            int64_t n = ((warpPos/local_k) % local_n) + ((warpPos / warps_per_elem) % grid_N) / local_n * local_n;
-            __syncwarp();
-            uint16_t this_weights[unroll_k];
-            if (unroll_k % 2 == 0) {
-                for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i+=2) {
-                    const ushort2 *loaded = (const ushort2 *) &weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
-                    __builtin_assume_aligned(loaded, 4);
-                    this_weights[unroll_k_i] = loaded->x;
-                    this_weights[unroll_k_i + 1] = loaded->y;
-                }
-            } else {
-                for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
-                    this_weights[unroll_k_i] = weights_compressed[(n*unroll_n + unroll_n_i) * K/pack + (k * WARP_SIZE + laneId) * unroll_k + unroll_k_i];
-                }
-            }
 
-#pragma unroll
-            for (int64_t unroll_k_i = 0; unroll_k_i < unroll_k; unroll_k_i++) {
-                // TODO: optimize access pattern by reordering weights
-                uint16_t encoded = this_weights[unroll_k_i];
-                uint64_t decoded = decode8weights(encoded, codebook_local);
-
-                #ifdef EMULATED_INT82FP16
-                // bit twiddling to convert int8 to fp16 from http://arxiv.org/abs/2211.10017
-                half2 unpacked[2][2];
-                uint64_t lower_half = decoded & 0x00ff00ff00ff00ff;
-                lower_half = (lower_half ^ 0x6480648064806480);
-                memcpy(unpacked[0], &lower_half, sizeof(uint64_t));
-                uint64_t upper_half = (decoded & 0xff00ff00ff00ff00) >> 8;
-                upper_half = (upper_half ^ 0x6480648064806480);
-                memcpy(unpacked[1], &upper_half, sizeof(uint64_t));
-
-                const half2 adjust = {__float2half(-1152.0f), __float2half(-1152.0f)};
-                unpacked[0][0] = __hadd2(unpacked[0][0], adjust);
-                unpacked[0][1] = __hadd2(unpacked[0][1], adjust);
-                unpacked[1][0] = __hadd2(unpacked[1][0], adjust);
-                unpacked[1][1] = __hadd2(unpacked[1][1], adjust);
-
-                float2 unpacked_f[2][2];
-                unpacked_f[0][0] = __half22float2(unpacked[0][0]);
-                unpacked_f[0][1] = __half22float2(unpacked[0][1]);
-                unpacked_f[1][0] = __half22float2(unpacked[1][0]);
-                unpacked_f[1][1] = __half22float2(unpacked[1][1]);
-
-
-                accumulator += this_activations[unroll_k_i * pack + 0] * (unpacked_f[0][0].x);
-                accumulator += this_activations[unroll_k_i * pack + 1] * (unpacked_f[1][0].x);
-                accumulator += this_activations[unroll_k_i * pack + 2] * (unpacked_f[0][0].y);
-                accumulator += this_activations[unroll_k_i * pack + 3] * (unpacked_f[1][0].y);
-                accumulator += this_activations[unroll_k_i * pack + 4] * (unpacked_f[0][1].x);
-                accumulator += this_activations[unroll_k_i * pack + 5] * (unpacked_f[1][1].x);
-                accumulator += this_activations[unroll_k_i * pack + 6] * (unpacked_f[0][1].y);
-                accumulator += this_activations[unroll_k_i * pack + 7] * (unpacked_f[1][1].y);
-                #else
-                for (int64_t i = 0; i < 8; i += 1) {
-                    int8_t weight = decoded >> (i * 8);
-                    accumulator += this_activations[unroll_k_i * pack + i] * (int8_t) weight;
-                }
-                #endif
-            }
-            accumulator *= 0.25;
-
-            for (int offset = WARP_SIZE/2; offset > 0; offset /= 2) {
-                // apparently c10::Half does arithmetic operations in float32?
-                // https://github.com/pytorch/pytorch/blob/0bd4d1f4ab38d3088de8aa5fbba35427b42d118e/c10/util/Half.h#L4C58-L6C80
-                if constexpr (std::is_same<scalar_t, c10::Half>::value) {
-                    accumulator += __shfl_down_sync(0xFFFFFFFF, __float2half(accumulator), offset);
-                } else {
-                    accumulator += __shfl_down_sync(0xFFFFFFFF, accumulator, offset);
-                }
-            }
-
-            if (SHARED_REDUCE) {
-                if (laneId == 0) {
-                    accum_scratch[warpId] = accumulator;
-                    __syncthreads();
-                    if (warpId % local_k == 0) {
-                        scalar_t local_accum = 0;
-                        for (int64_t accum_i = 0; accum_i < local_k; accum_i++) {
-                            local_accum += accum_scratch[warpId / local_k * local_k + accum_i];
-                        }
-                        atomicAdd(output + m * N + n * unroll_n + unroll_n_i, local_accum);
-                    }
-                } else {
-                    __syncthreads();
-                }
-            } else {
-                if (laneId == 0) {
-                    atomicAdd(output + m * N + n * unroll_n + unroll_n_i, accumulator);
-                }
-            }
+        // we produced 16 outputs, so only 16 threads
+        if ((laneId & 1) == 0) {
+            atomicAdd(output + (iin << 4) + (laneId >> 1), (laneId & 2) ? z2 : z0);
         }
+
+        // if ((laneId & 3) == 0) {
+        //     sum_scratch[warpId + ((laneId >> 1) + 0) * 32] = z0;
+        //     sum_scratch[warpId + ((laneId >> 1) + 1) * 32] = z2;
+        // }
+        // __syncthreads();
+
+        // // load and sum
+        // if (warpId < 16) {
+        //     float acc = sum_scratch[laneId + warpId*32];
+        //     for (int offset = 16; offset > 0; offset /= 2) {
+        //         acc += __shfl_down_sync(FULL_MASK, acc, offset);
+        //     }
+        //     if (laneId == 0) {
+        //         output[(iin << 4) + warpId] = acc;
+        //     }
+        // }
     }
 }
 
 
-__host__ extern torch::Tensor decode_matmul_e8p(
+__host__ extern torch::Tensor decode_matvec_e8p(
     torch::Tensor x,
     torch::Tensor weights_compressed,
     torch::Tensor codebook_abs
@@ -265,47 +280,306 @@ __host__ extern torch::Tensor decode_matmul_e8p(
     CHECK_INPUT(weights_compressed);
     CHECK_INPUT(codebook_abs);
 
-    TORCH_CHECK(weights_compressed.scalar_type() == torch::kInt16);
-    TORCH_CHECK(codebook_abs.scalar_type() == torch::kInt64);
-    TORCH_CHECK(x.size(-1) == weights_compressed.size(-1) << 3);
+    TORCH_CHECK(x.dim() == 1);
+    TORCH_CHECK(weights_compressed.dim() == 4);
+    TORCH_CHECK(weights_compressed.size(3) == 4);
+    TORCH_CHECK(weights_compressed.size(2) == 8);
+    TORCH_CHECK(codebook_abs.dim() == 1);
+    TORCH_CHECK(x.scalar_type() == torch::kFloat16);
+    TORCH_CHECK(weights_compressed.scalar_type() == torch::kInt64);
+    TORCH_CHECK(codebook_abs.scalar_type() == torch::kInt32);
+    TORCH_CHECK(x.size(-1) == weights_compressed.size(1) << 6);
     TORCH_CHECK(codebook_abs.size(-1) == 256);
 
-    int64_t M = x.size(-2);
-    int64_t N = weights_compressed.size(-2);
+    int64_t N = weights_compressed.size(0) * 16;
     int64_t K = x.size(-1);
-    //printf("%lld %lld %lld\n", M, N, K);
 
-    TORCH_CHECK(K % WARP_SIZE == 0, "K is not divisible by WARP_SIZE");
+    TORCH_CHECK(K % 64 == 0, "K is not divisible by 64");
+    TORCH_CHECK(N % 16 == 0, "N is not divisible by 16");
+
+    TORCH_CHECK(K < 65536, "K is not too large");
+    TORCH_CHECK(N < 65536, "N is not too large");
 
     at::DeviceGuard guard(x.device());
     torch::TensorOptions options = torch::TensorOptions()
-        .dtype(x.scalar_type())
+        .dtype(torch::kFloat32)
         .layout(torch::kStrided)
         .device(torch::kCUDA)
         .requires_grad(false);
-    torch::Tensor output = torch::zeros(std::vector<int64_t>{M, N}, options);
+    torch::Tensor output = torch::zeros(std::vector<int64_t>{N}, options);
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, x.get_device());
-    int64_t grid_size = static_cast<int64_t>(6 * deviceProp.multiProcessorCount);
+    int64_t grid_size = static_cast<int64_t>(deviceProp.multiProcessorCount);
     at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-            at::ScalarType::Half,
-            at::ScalarType::BFloat16,
-            x.scalar_type(),
-            "decode_matmul_e8p",
-            [&] {
-        decode_matmul_e8p_kernel<<<grid_size, BLOCK_SIZE, 0, stream>>>(
-                output.data_ptr<scalar_t>(),
-                x.data_ptr<scalar_t>(),
-                weights_compressed.data_ptr<int16_t>(),
-                codebook_abs.data_ptr<int64_t>(),
-                M,
-                N,
-                K);
-        gpuErrchk(cudaPeekAtLastError());
-    });
+    const dim3 block_size(32,32);
+
+    decode_matvec_e8p_kernel<<<grid_size, block_size, 0, stream>>>(
+        output.data_ptr<float>(),
+        (const uint2*)x.data_ptr<c10::Half>(),
+        (const uint2*)weights_compressed.data_ptr<int64_t>(),
+        (const uint32_t*)codebook_abs.data_ptr<int32_t>(),
+        N,
+        K);
+    
+    gpuErrchk(cudaPeekAtLastError());
+
+    return output;
+}
+
+
+
+__global__ static void
+test_tc_kernel(float *__restrict__ output) {
+    int laneId = threadIdx.x;
+
+    uint32_t w0 = (laneId == 0) ? 0x3C003C00 : 0x00000000;
+    uint32_t w1 = 0x00000000;
+    uint32_t w2 = 0x00000000;
+    uint32_t w3 = 0x00000000;
+
+    uint32_t x0 = (laneId == 0) ? 0x3C003C00 : 0x00000000;
+    uint32_t x1 = 0x00000000;
+
+    float z0 = 0.0;
+    float z1 = 0.0;
+    float z2 = 0.0;
+    float z3 = 0.0;
+
+    asm(
+        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+        " { %0, %1, %2, %3 },"
+        " { %4, %5, %6, %7 },"
+        " { %8, %9 },"
+        " { %0, %1, %2, %3 };"
+        : "+f"(z0), "+f"(z1), "+f"(z2), "+f"(z3)
+        : "r"(w0), "r"(w1), "r"(w2), "r"(w3),
+          "r"(x0), "r"(x1)
+    );
+
+    output[laneId*4 + 0] = z0;
+    output[laneId*4 + 1] = z1;
+    output[laneId*4 + 2] = z2;
+    output[laneId*4 + 3] = z3;
+}
+
+__host__ extern torch::Tensor test_tc() {
+
+    torch::TensorOptions options = torch::TensorOptions()
+        .dtype(torch::kFloat32)
+        .layout(torch::kStrided)
+        .device(torch::kCUDA)
+        .requires_grad(false);
+    torch::Tensor output = torch::zeros(std::vector<int64_t>{32*4}, options);
+
+    test_tc_kernel<<<1, 32>>>(output.data_ptr<float>());
+    
+    gpuErrchk(cudaPeekAtLastError());
+
+    return output;
+}
+
+
+
+
+__global__ static void
+test_codebook_expand_kernel(uint32_t *__restrict__ output, const uint32_t *__restrict__ codebook_abs) {
+    uint32_t a = threadIdx.x;
+    uint32_t b = 0;
+
+    for (int i = 0; i < 8; i++) {
+        b |= (((blockIdx.x >> i) & 1) << (4*i));
+    }
+
+    uint32_t s = b;
+    s = s ^ (s >> 4);
+    s = s ^ (s >> 8);
+    s = s ^ (s >> 16);
+    uint32_t sb = (s & 15);
+    s = b ^ sb;
+    sb = sb | (sb << 16);
+
+    uint32_t x = codebook_abs[(a >> 0) & 255];
+    x = x ^ ((s & 0x11111111) * 14);
+
+    uint32_t o = BASE_OFFSET | ((sb & 0x00010001) << 4);
+
+    uint32_t w0 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+    uint32_t w1 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+    uint32_t w2 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+    uint32_t w3 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+    output[blockIdx.x*256*4 + threadIdx.x*4 + 0] = w0;
+    output[blockIdx.x*256*4 + threadIdx.x*4 + 1] = w1;
+    output[blockIdx.x*256*4 + threadIdx.x*4 + 2] = w2;
+    output[blockIdx.x*256*4 + threadIdx.x*4 + 3] = w3;
+}
+
+__host__ extern torch::Tensor test_codebook_expand(torch::Tensor codebook_abs) {
+
+    torch::TensorOptions options = torch::TensorOptions()
+        .dtype(torch::kFloat16)
+        .layout(torch::kStrided)
+        .device(torch::kCUDA)
+        .requires_grad(false);
+    torch::Tensor output = torch::zeros(std::vector<int64_t>{256*256,8}, options);
+
+    test_codebook_expand_kernel<<<256, 256>>>((uint32_t*)output.data_ptr<c10::Half>(), (const uint32_t*)codebook_abs.data_ptr<int32_t>());
+    
+    gpuErrchk(cudaPeekAtLastError());
+
+    return output;
+}
+
+
+
+
+__global__ static void
+// __launch_bounds__(1024, 1024)
+decompress_packed_e8p_kernel(
+    uint32_t *__restrict__ output,
+    const uint2 *__restrict__ weights_compressed,
+    const uint32_t *__restrict__ codebook_abs,
+    int N,
+    int K
+) {
+    int warpId = threadIdx.y;
+    int laneId = threadIdx.x;
+
+    for (int iin = blockIdx.x; iin < (N >> 4); iin += gridDim.x) {
+
+        for (int iik = warpId; iik < (K >> 6); iik += 32) {
+            uint2 w_compr = weights_compressed[laneId + 32*iik + (K >> 1)*iin];
+            uint32_t a = w_compr.x;
+            uint32_t b = w_compr.y;
+
+            uint32_t s = b;
+            s = s ^ (s >> 4);
+            s = s ^ (s >> 8);
+            s = s ^ (s >> 16);
+            uint32_t sb = (s & 15);
+            s = b ^ sb;
+            sb = sb | (sb << 16);
+
+            /// BLOCK 01
+            {
+            uint32_t x = codebook_abs[(a >> 0) & 255];
+            x = x ^ ((s & 0x11111111) * 14);
+
+            uint32_t o = BASE_OFFSET | ((sb & 0x00010001) << 4);
+
+            uint32_t w00 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w01 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w02 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w03 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            x = codebook_abs[(a >> 8) & 255];
+            x = x ^ ((s & 0x22222222) * 7);
+
+            o = BASE_OFFSET | ((sb & 0x00020002) << 3);
+            
+            uint32_t w10 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w11 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w12 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w13 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 0] = w00;
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 1] = w01;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 0] = w10;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 1] = w11;
+
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 2] = w02;
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 3] = w03;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 2] = w12;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 0*4 + ((laneId & 3) << 3) + 3] = w13;
+
+            }
+            /// BLOCK 23 
+            {
+            uint32_t x = codebook_abs[(a >> 16) & 255];
+            s = s >> 2;
+            x = x ^ ((s & 0x11111111) * 14);
+
+            uint32_t o = BASE_OFFSET | ((sb & 0x00040004) << 2);
+            
+            uint32_t w00 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w01 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w02 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w03 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            x = codebook_abs[(a >> 24) & 255];
+            x = x ^ ((s & 0x22222222) * 7);
+
+            o = BASE_OFFSET | ((sb & 0x00080008) << 1); 
+
+            uint32_t w10 = add_as_half2(mask_lop3(x << 4, XMASK, WMASK), o);
+            uint32_t w11 = add_as_half2(mask_lop3(x << 0, XMASK, WMASK), o);
+            uint32_t w12 = add_as_half2(mask_lop3(x >> 4, XMASK, WMASK), o);
+            uint32_t w13 = add_as_half2(mask_lop3(x >> 8, XMASK, WMASK), o);
+
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 0] = w00;
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 1] = w01;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 0] = w10;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 1] = w11;
+
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 2] = w02;
+            output[iin*8*K + (laneId >> 2)*K + 0 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 3] = w03;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 2] = w12;
+            output[iin*8*K + (laneId >> 2)*K + 1 * (K >> 1) + iik*32 + 1*4 + ((laneId & 3) << 3) + 3] = w13;
+            }
+        }
+    }
+}
+
+
+__host__ extern torch::Tensor decompress_packed_e8p(
+    torch::Tensor weights_compressed,
+    torch::Tensor codebook_abs
+) {
+    CHECK_INPUT(weights_compressed);
+    CHECK_INPUT(codebook_abs);
+
+    TORCH_CHECK(weights_compressed.dim() == 4);
+    TORCH_CHECK(weights_compressed.size(3) == 4);
+    TORCH_CHECK(weights_compressed.size(2) == 8);
+    TORCH_CHECK(codebook_abs.dim() == 1);
+    TORCH_CHECK(weights_compressed.scalar_type() == torch::kInt64);
+    TORCH_CHECK(codebook_abs.scalar_type() == torch::kInt32);
+    TORCH_CHECK(codebook_abs.size(-1) == 256);
+
+    int64_t N = weights_compressed.size(0) * 16;
+    int64_t K = weights_compressed.size(1) << 6;
+
+    TORCH_CHECK(K % 64 == 0, "K is not divisible by 64");
+    TORCH_CHECK(N % 16 == 0, "N is not divisible by 16");
+
+    TORCH_CHECK(K < 65536, "K is not too large");
+    TORCH_CHECK(N < 65536, "N is not too large");
+
+    at::DeviceGuard guard(codebook_abs.device());
+    torch::TensorOptions options = torch::TensorOptions()
+        .dtype(torch::kFloat16)
+        .layout(torch::kStrided)
+        .device(torch::kCUDA)
+        .requires_grad(false);
+    torch::Tensor output = torch::zeros(std::vector<int64_t>{N,K}, options);
+
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, weights_compressed.get_device());
+    int64_t grid_size = static_cast<int64_t>(deviceProp.multiProcessorCount);
+    at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
+    const dim3 block_size(32,32);
+
+    decompress_packed_e8p_kernel<<<grid_size, block_size, 0, stream>>>(
+        (uint32_t*)output.data_ptr<c10::Half>(),
+        (const uint2*)weights_compressed.data_ptr<int64_t>(),
+        (const uint32_t*)codebook_abs.data_ptr<int32_t>(),
+        N,
+        K);
+    
+    gpuErrchk(cudaPeekAtLastError());
 
     return output;
 }

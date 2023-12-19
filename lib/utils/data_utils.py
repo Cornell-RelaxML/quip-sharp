@@ -58,7 +58,6 @@ def block_LDL(H, b):
 def wrap_tokenizer(tokenizer, x, ctx_size):
     return tokenizer(x, return_tensors='pt', truncation=True, padding=True, max_length=ctx_size)
 
-
 def sample_devset(dataset, tokenizer, size=128, ctx_size=2048, nproc=1):
     devset = torch.zeros((size, ctx_size), dtype=torch.int64)
     saved = 0
@@ -122,6 +121,7 @@ def load_quip(save_name, cb, args, device):
 
 def dtype_from_str(str):
     dtype_map = {
+        'torch.int64': torch.int64,
         'torch.int32': torch.int32,
         'torch.int16': torch.int16,
         'torch.uint8': torch.uint8,

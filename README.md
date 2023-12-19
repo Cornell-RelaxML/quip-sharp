@@ -10,7 +10,7 @@ We also provide a full codebase that allows users to quantize and deploy their o
 | OPTQ      | 3 bit     |   4.577   |   6.838   |   0.544   | **0.786** |
 | OPTQ      | 2 bit     |  109.820  |   62.692  |   0.253   |   0.505   |
 | QuIP      | 2 bit     |   5.574   |   8.268   |   0.544   |   0.751   |
-| **QuIP#** | **2 bit** | **4.156** | **6.545** | **0.595** |   0.785   |
+| **QuIP#** | **2 bit** | **4.159** | **6.529** | **0.595** | **0.786** |
 
 Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2 bits, outperforming all other presented baselines.
 
@@ -18,9 +18,8 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
 
 ## News
 
-- We have "deprecated" the 2 bit D4 quantized models as they perform worse than 2 bit E8P models and are slower to run. The code to quantize and run D4 models is still in the codebase, but the D4 models have been removed from HF and we are no longer actively supporting them.
-- We recently added 2 and 4 bit quantized versions of [Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) and [OpenHermes 2.5](https://huggingface.co/teknium/OpenHermes-2.5-Mistral-7B). See the Model Zoo section for more details.
-- **The 4 bit models have been replaced by new bit-packed models that end with the `-Packed` suffix. The old models have been deprecated, removed, and do not work with the current code (and vice versa). Make sure to pull the latest code to run the 4 bit models.**
+- We merged in a faster E8P kernel that (with CUDA graphs) is around twice as fast as before. Make sure to pull the latest code and models and recompile `quiptools` to get the faster kernel. As a reminder, `hf.generate()` does not work with CUDA graphs so the generation speed in `interactive_gen.py` is not representative of reality.
+- We fixed a duplicated entry in the E8P codebook and updated the result tables.
 
 ## Installation
 

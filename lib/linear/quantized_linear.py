@@ -18,7 +18,8 @@ class QuantizedLinear(nn.Module):
                  codebook_version,
                  outlier_channel_split=False,
                  rank=-1,
-                 rescale_WH=False):
+                 rescale_WH=False,
+                 bias=False):
         super().__init__()
 
         self.in_features = in_features
@@ -27,6 +28,10 @@ class QuantizedLinear(nn.Module):
         self.rank = rank
         self.rescale_WH = rescale_WH
 
+        self.has_bias = bias
+        if self.has_bias:
+            self.register_buffer('bias', torch.ones(out_features))
+        
         if self.outlier_channel_split:
             self.register_buffer('ocs_dupe_inds', torch.arange(in_features))
 
@@ -87,18 +92,22 @@ class QuantizedLinear(nn.Module):
         if self.outlier_channel_split:
             input = input[..., self.ocs_dupe_inds]
 
-        return self.codebook_class(input,
-                                   self.Qidxs,
-                                   self.SU,
-                                   self.SV,
-                                   self.Wscale,
-                                   self.had_left,
-                                   self.had_right,
-                                   self.K_left,
-                                   self.K_right,
-                                   rank=self.rank,
-                                   A=self.A,
-                                   B=self.B,
-                                   rescale_WH=self.rescale_WH,
-                                   scaleWH=self.scaleWH,
-                                   packed=self.packed)
+        result = self.codebook_class(input,
+                                     self.Qidxs,
+                                     self.SU,
+                                     self.SV,
+                                     self.Wscale,
+                                     self.had_left,
+                                     self.had_right,
+                                     self.K_left,
+                                     self.K_right,
+                                     rank=self.rank,
+                                     A=self.A,
+                                     B=self.B,
+                                     rescale_WH=self.rescale_WH,
+                                     scaleWH=self.scaleWH,
+                                     packed=self.packed)
+        if self.has_bias:
+            return result + self.bias
+        return result
+        
