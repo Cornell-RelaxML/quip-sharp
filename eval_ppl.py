@@ -22,7 +22,7 @@ parser.add_argument('--no_use_flash_attn', action='store_true')
 
 
 def main(args):
-    datasets = ['wikitext2', 'c4']
+    datasets = ['wikitext2', 'c4', 'c4_new']
     model, model_str = model_from_hf_path(args.hf_path,
                                           use_cuda_graph=not args.no_use_cuda_graph,
                                           use_flash_attn=not args.no_use_flash_attn)

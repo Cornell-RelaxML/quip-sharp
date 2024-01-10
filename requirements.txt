@@ -15,7 +15,7 @@ click==8.1.7
 colorama==0.4.6
 cryptography 
 DataProperty==1.0.1
-datasets==2.14.6
+datasets==2.16.1
 dill==0.3.7
 distro==1.8.0
 einops==0.7.0
