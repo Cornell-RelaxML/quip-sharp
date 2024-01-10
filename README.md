@@ -74,6 +74,9 @@ All it does is call HF's `.generate()` function.
 We provide quantized models available on HF.
 To use them, pass the given HF repo_id to `--hf_path`.
 See our blog post for details on the codebooks.
+The 3 bit models are currently significantly slower than the 2 and 4 bit models to generate text with since we have not written a matvec CUDA kernel for them yet.
+Currently, the 3 bit models do a full decompress then multiply for each linear layer instead of decompression during multiplication like the 2 and 4 bit models do.
+We are aiming to merge in a 3 bit matvec kernel in soon.
 
 | Lattice Codebook | Base Model  | Weight Bits | HF repo_id |
 |:----------------:|:-----------|:-----------:|:----------------|
