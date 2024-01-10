@@ -373,76 +373,6 @@ void decompress_d4(
 }
 
 
-#define DECOMPRESS_E8P_BLOCK_SIZE 256
-#define FLIP_MASK 9223512776490647552LLU // (1 << 63) + (1 << 47) + (1 << 31) + (1 << 15)
-
-__global__ void cuda_decompress_e8p_origorder_kernel(
-    const int16_t* __restrict__ YIs,      // m x (n/8)
-    const c10::Half* __restrict__ CB, // 256 x 8
-    const bool* __restrict__ CB_even_flips, 
-    c10::Half* __restrict__ Y             // m x n
-) {
-  const long i = threadIdx.x + DECOMPRESS_E8P_BLOCK_SIZE * blockIdx.x;
-
-  uint16_t yidx = ((uint16_t*)YIs)[i] - 32768;
-  uint16_t abs_idx = (yidx & 65280) >> 8;
-  uint16_t flips = (yidx & 254) >> 1;
-  flips |= (((__popc(flips) & 1) == CB_even_flips[abs_idx]) << 7);
-  
-  ((uint64_t*)Y)[i*2] = ((uint64_t*)CB)[abs_idx*2];
-  uint64_t l4flips = (uint64_t)(flips >> 4);
-  l4flips |= (l4flips << 34);
-  l4flips |= (l4flips << 17);
-  l4flips = (l4flips << 12);
-  l4flips &= FLIP_MASK;
-  ((uint64_t*)Y)[i*2] |= l4flips;
-  
-  ((uint64_t*)Y)[i*2 + 1] = ((uint64_t*)CB)[abs_idx*2 + 1];
-  uint64_t r4flips = (uint64_t)(flips & 15);
-  r4flips |= (r4flips << 34);
-  r4flips |= (r4flips << 17);
-  r4flips = (r4flips << 12);
-  r4flips &= FLIP_MASK;
-  ((uint64_t*)Y)[i*2 + 1] |= r4flips;
-  
-  __half2 const shift = (yidx & 1 ? __half2half2((c10::Half)0.25) : __half2half2((c10::Half)-0.25));
-# pragma unroll 4
-  for(long k = 0; k < 4; k++){
-    ((__half2*)Y)[i*4 + k] = __hadd2(((__half2*)Y)[i*4 + k], shift);
-  }
-}
-
-
-void decompress_e8p_origorder(
-    torch::Tensor YIs,      // m x (n/8)
-    torch::Tensor CB,       // 256 x 8
-    torch::Tensor CB_even_flips, // 256
-    torch::Tensor &Y         // m x n
-) {
-  size_t m = Y.sizes()[0];
-  size_t n = Y.sizes()[1];
-
-  assert(YIs.is_contiguous());
-  assert(CB.is_contiguous());
-  assert(CB_even_flips.is_contiguous());
-  assert(Y.is_contiguous());
-
-  assert(YIs.sizes()[0] == m);
-  assert(YIs.sizes()[1] * 8 == n);
-  assert(CB.sizes()[0] == 256);
-  assert(CB.sizes()[1] == 8);
-  assert(CB_even_flips.sizes()[0] == 256);
-  
-  const dim3 threads(DECOMPRESS_E8P_BLOCK_SIZE);
-  const dim3 blocks(m*n/(8*DECOMPRESS_E8P_BLOCK_SIZE));
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
-  cuda_decompress_e8p_origorder_kernel<<<blocks, threads, 0, stream>>>(
-    YIs.data_ptr<int16_t>(),
-    CB.data_ptr<c10::Half>(),
-    CB_even_flips.data_ptr<bool>(),
-    Y.data_ptr<c10::Half>()
-  );
-}
 
 
 // This is a terrible kernel, only use this to not call the pytorch version
@@ -492,6 +422,59 @@ void decompress_hi4b1c_packed(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
   cuda_decompress_hi4b1c_packed_kernel<<<blocks, threads, 0, stream>>>(
     YIs.data_ptr<int32_t>(),
+    CB.data_ptr<c10::Half>(),
+    Y.data_ptr<c10::Half>()
+  );
+}
+
+
+
+// This is a terrible kernel, only use this to not call the pytorch version
+
+#define DECOMPRESS_E81B_BLOCK_SIZE 4
+
+__global__ void cuda_decompress_e81b_packed_kernel(
+    const int64_t* __restrict__ YIs,     // m x (n/8)
+    const c10::Half* __restrict__ CB,     // 256 x 8
+    c10::Half* __restrict__ Y             // m x n
+) {
+  const long i = threadIdx.x + DECOMPRESS_E81B_BLOCK_SIZE * blockIdx.x;
+
+  uint64_t packed = YIs[i];
+  
+#pragma unroll
+  for (long j = 0; j < 8; j++) {
+    uint64_t yidx = packed & 255;
+    ((uint64_t*)Y)[(i*8 + j)*2] = ((uint64_t*)CB)[yidx*2];
+    ((uint64_t*)Y)[(i*8 + j)*2 + 1] = ((uint64_t*)CB)[yidx*2 + 1];
+    packed = packed >> 8;
+  }
+  
+}
+
+void decompress_e81b_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,
+    torch::Tensor &Y         // m x n
+) {
+  size_t m = Y.sizes()[0];
+  size_t n = Y.sizes()[1];
+
+  assert(YIs.is_contiguous());
+  assert(Y.is_contiguous());
+
+  assert(YIs.sizes()[0] == m);
+  assert(YIs.sizes()[1] * 64 == n);
+
+  assert(CB.sizes()[0] == 256);
+  assert(CB.sizes()[1] == 8);
+
+  
+  const dim3 threads(DECOMPRESS_E81B_BLOCK_SIZE);
+  const dim3 blocks(m*n/(64*DECOMPRESS_E81B_BLOCK_SIZE));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cuda_decompress_e81b_packed_kernel<<<blocks, threads, 0, stream>>>(
+    YIs.data_ptr<int64_t>(),
     CB.data_ptr<c10::Half>(),
     Y.data_ptr<c10::Half>()
   );

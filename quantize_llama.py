@@ -26,14 +26,15 @@ parser.add_argument('--num_cpu_threads', default=8, type=int)
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--devset_size', default=64, type=int)
 parser.add_argument('--ctx_size', default=2048, type=int)
-parser.add_argument('--save_path', type=str)
-parser.add_argument('--hessian_path', type=str)
+parser.add_argument('--save_path', default='checkpoints/quantized-hada-70b', type=str)
+parser.add_argument('--hessian_path', default='/share/desa/nfs01/quip_llama2/hessians', type=str)
 parser.add_argument('--base_model', default='meta-llama/Llama-2-70b-hf', type=str)
 parser.add_argument('--sigma_reg', default=1e-2, type=float)
 parser.add_argument('--sigma_reg2', default=1e-2, type=float)
 parser.add_argument('--incoh_mode', default='had', type=str, choices=['had', 'kron'])
 parser.add_argument('--lora_rank', default=0, type=int, help='if <=0 then turned off')
 parser.add_argument('--scale_override', default=-1, type=float)
+parser.add_argument('--resid_scale_override', default=-1, type=float)
 parser.add_argument('--codebook', default='D4', type=str)
 parser.add_argument('--quip_tune_iters', default=10, type=int)
 parser.add_argument('--remove_mean', action='store_true')
@@ -45,6 +46,7 @@ parser.add_argument('--no_use_buffered', action='store_true')
 parser.add_argument('--q_buffer_size', default=2, type=int)
 parser.add_argument('--rescale_WH', action='store_true')
 parser.add_argument('--sample_proc', default=1, type=int)
+parser.add_argument('--no_eval', action='store_true')
 
 
 def quantize_kqv(layer, idx, cb, args, device='cpu', check_only=False):
@@ -234,6 +236,7 @@ def quantize_layer(layer, idx, cb, args, device='cpu', return_layer=False):
     # if it has been quantized already. Otherwise, load it for returning.
     torch.manual_seed(idx)
     torch.set_grad_enabled(False)
+    torch.set_num_threads(args.num_cpu_threads)
 
     utils.clean()
     quantize_kqv(layer, idx, cb, args, device, check_only=not return_layer)
@@ -269,21 +272,21 @@ def main(args):
 
     # save configs
     all_config = {'quant_args': args, 'model_config': model.config}
-    all_config['model_config'].update({
-        'quip_params': {
-            'outlier_channel_split': args.outlier_channel_split,
-            'lora_rank': args.lora_rank,
-            'rescale_WH': args.rescale_WH,
-            'codebook': args.codebook,
-            'codebook_version': cb.version,
-            'codesz': cb.codesz,
-            'idx_dtype': str(cb.idx_dtype),
-            'fused': True,
-            'packsz': cb.packsz,
-        }
-    })
+    quip_params = {
+        'outlier_channel_split': args.outlier_channel_split,
+        'lora_rank': args.lora_rank,
+        'rescale_WH': args.rescale_WH,
+        'codebook': args.codebook,
+        'codebook_version': cb.version,
+        'codesz': cb.codesz,
+        'idx_dtype': str(cb.idx_dtype),
+        'fused': True,
+        'packsz': cb.packsz,
+        'resid_scale_override': args.resid_scale_override,
+    }
     if args.outlier_channel_split:
-        all_config['model_config'].quip_params['ocs_down_size'] = args.ocs_down_size
+        quip_params['ocs_down_size'] = args.ocs_down_size
+    all_config['model_config'].update({'quip_params': quip_params})
     torch.save(all_config, os.path.join(args.save_path, 'config.pt'))
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
@@ -316,6 +319,8 @@ def main(args):
             p.join()
 
         glog.info('done quantizing')
+        if args.no_eval:
+            return
 
     # do the rest of the stuff on gpu 0
     device = 0
@@ -414,7 +419,6 @@ if __name__ == '__main__':
     torch.set_grad_enabled(False)
     mp.set_start_method('spawn')
     args = parser.parse_args()
-    torch.set_num_threads(args.num_cpu_threads)
     torch.manual_seed(args.seed)
     os.makedirs(args.save_path, exist_ok=True)
     main(args)

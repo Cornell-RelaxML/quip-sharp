@@ -2,6 +2,7 @@
 
 from model.graph_wrapper import get_graph_wrapper
 from model.llama import LlamaForCausalLM as llama_fuse
+from model.llama_nofuse import LlamaForCausalLM as llama_nofuse
 from model.mistral import MistralForCausalLM
 import json
 import os
@@ -16,9 +17,10 @@ def model_from_hf_path(path, use_cuda_graph=True, use_flash_attn=True):
     is_quantized = hasattr(bad_config, 'quip_params')
     model_type = bad_config.model_type
     if is_quantized:
+        fused = bad_config.quip_params.get('fused', True)
         if model_type == 'llama':
             model_str = transformers.LlamaConfig.from_pretrained(path)._name_or_path
-            model_cls = llama_fuse
+            model_cls = llama_fuse if fused else llama_nofuse
         elif model_type == 'mistral':
             model_str = transformers.MistralConfig.from_pretrained(path)._name_or_path
             model_cls = MistralForCausalLM

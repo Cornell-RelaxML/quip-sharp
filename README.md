@@ -1,7 +1,7 @@
 # QuIP#: [QuIP](https://github.com/jerry-chee/QuIP) with Lattice Codebooks
 This repository contains the official code for **QuIP#**, a weights-only quantization method that is able to achieve near fp16 performance using only 2 bits per weight.
-QuIP# combines lattice codebooks with incoherence processing to create state-of-the-art 2 bit quantized models.
-We provide a full suite of 2 bit Llama models quantized using QuIP# as well as other Llama-architecture models (e.g. Mistral).
+QuIP# combines lattice codebooks with incoherence processing to create state-of-the-art quantized models.
+We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# as well as other Llama-architecture models (e.g. Mistral).
 We also provide a full codebase that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
 
 | Method    | Precision | Wiki $\downarrow$ | C4 $\downarrow$  | ArcE $\uparrow$  | PiQA $\uparrow$  |
@@ -18,6 +18,7 @@ Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2
 
 ## News
 
+- We've released new 3 and 4 bit models that use residual vector quantization (RVQ) to get the benefits of the $E_8$ lattice at higher bitrates. Learn more about these models in the blog post above and check out the models in our model zoo!
 - We merged in a faster E8P kernel that (with CUDA graphs) is around twice as fast as before. Make sure to pull the latest code and models and recompile `quiptools` to get the faster kernel. As a reminder, `hf.generate()` does not work with CUDA graphs so the generation speed in `interactive_gen.py` is not representative of reality.
 - We fixed a duplicated entry in the E8P codebook and updated the result tables.
 
@@ -72,32 +73,46 @@ All it does is call HF's `.generate()` function.
 ## Model Zoo
 We provide quantized models available on HF.
 To use them, pass the given HF repo_id to `--hf_path`.
-We recommend using the `E8P` codebook which quantizes to 2 bits per weight, which gives the best quantization at 2 bits.
-See our blogpost for details on the codebooks.
+See our blog post for details on the codebooks.
 
 | Lattice Codebook | Base Model  | Weight Bits | HF repo_id |
 |:----------------:|:-----------|:-----------:|:----------------|
-| E8P (recommended)| Llama 2 70b | 2           | [`relaxml/Llama-2-70b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8P-2Bit) |
+| E8P 2 Bit        | Llama 2 70b | 2           | [`relaxml/Llama-2-70b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8P-2Bit) |
 |                  | Llama 2 70b chat| 2       | [`relaxml/Llama-2-70b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8P-2Bit) |
 |                  | Llama 2 13b | 2           | [`relaxml/Llama-2-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8P-2Bit) |
 |                  | Llama 2 13b chat| 2       | [`relaxml/Llama-2-13b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-13b-chat-E8P-2Bit) |
 |                  | Llama 2 7b  | 2           | [`relaxml/Llama-2-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-E8P-2Bit)   |
-|                  | Llama 2 7b chat| 2       | [`relaxml/Llama-2-7b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-chat-E8P-2Bit) |
+|                  | Llama 2 7b chat| 2        | [`relaxml/Llama-2-7b-chat-E8P-2Bit`](https://huggingface.co/relaxml/Llama-2-7b-chat-E8P-2Bit) |
 |                  | Llama 1 65b | 2           | [`relaxml/Llama-1-65b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-65b-E8P-2Bit) |
 |                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8P-2Bit) |
 |                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8P-2Bit) |
 |                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
 |		   | Mistral 7b  | 2	       | [`relaxml/Mistral-7b-E8P-2Bit`](https://huggingface.co/relaxml/Mistral-7b-E8P-2Bit)   |
 |		   | OpenHermes 2.5 | 2	       | [`relaxml/Openhermes-7b-E8P-2Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8P-2Bit)   |
-| HI               | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-70b-HI-4Bit-Packed) |
-|                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-13b-HI-4Bit-Packed) |
-|                  | Llama 2 7b  | 4           | [`relaxml/Llama-2-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-2-7b-HI-4Bit-Packed)   |
-|                  | Llama 1 65b | 4           | [`relaxml/Llama-1-65b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-1-65b-HI-4Bit-Packed) |
-|                  | Llama 1 30b | 4           | [`relaxml/Llama-1-30b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-1-30b-HI-4Bit-Packed) |
-|                  | Llama 1 13b | 4           | [`relaxml/Llama-1-13b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-1-13b-HI-4Bit-Packed) |
-|                  | Llama 1 7b  | 4           | [`relaxml/Llama-1-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Llama-1-7b-HI-4Bit-Packed)   |
-|		   | Mistral 7b  | 4	       | [`relaxml/Mistral-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Mistral-7b-HI-4Bit-Packed)   |
-|		   | OpenHermes 2.5 | 4	       | [`relaxml/Openhermes-7b-HI-4Bit-Packed`](https://huggingface.co/relaxml/Openhermes-7b-HI-4Bit-Packed)   |
+| E8P RVQ 3 Bit    | Llama 2 70b | 3           | [`relaxml/Llama-2-70b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8PRVQ-3Bit) |
+|                  | Llama 2 70b chat| 3       | [`relaxml/Llama-2-70b-chat-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8PRVQ-3Bit) |
+|                  | Llama 2 13b | 3           | [`relaxml/Llama-2-13b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8PRVQ-3Bit) |
+|                  | Llama 2 13b chat| 3       | [`relaxml/Llama-2-13b-chat-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-13b-chat-E8PRVQ-3Bit) |
+|                  | Llama 2 7b  | 3           | [`relaxml/Llama-2-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-7b-E8PRVQ-3Bit)   |
+|                  | Llama 2 7b chat| 3        | [`relaxml/Llama-2-7b-chat-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-7b-chat-E8PRVQ-3Bit) |
+|                  | Llama 1 65b | 3           | [`relaxml/Llama-1-65b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-65b-E8PRVQ-3Bit) |
+|                  | Llama 1 30b | 3           | [`relaxml/Llama-1-30b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8PRVQ-3Bit) |
+|                  | Llama 1 13b | 3           | [`relaxml/Llama-1-13b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8PRVQ-3Bit) |
+|                  | Llama 1 7b  | 3           | [`relaxml/Llama-1-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8PRVQ-3Bit)   |
+|		   | Mistral 7b  | 3	       | [`relaxml/Mistral-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-3Bit)   |
+|		   | OpenHermes 2.5 | 3	       | [`relaxml/Openhermes-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-3Bit)   |
+| E8P RVQ 4 Bit    | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8PRVQ-4Bit) |
+|                  | Llama 2 70b chat| 4       | [`relaxml/Llama-2-70b-chat-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8PRVQ-4Bit) |
+|                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8PRVQ-4Bit) |
+|                  | Llama 2 13b chat| 4       | [`relaxml/Llama-2-13b-chat-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-13b-chat-E8PRVQ-4Bit) |
+|                  | Llama 2 7b  | 4           | [`relaxml/Llama-2-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-7b-E8PRVQ-4Bit)   |
+|                  | Llama 2 7b chat| 4        | [`relaxml/Llama-2-7b-chat-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-7b-chat-E8PRVQ-4Bit) |
+|                  | Llama 1 65b | 4           | [`relaxml/Llama-1-65b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-65b-E8PRVQ-4Bit) |
+|                  | Llama 1 30b | 4           | [`relaxml/Llama-1-30b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8PRVQ-4Bit) |
+|                  | Llama 1 13b | 4           | [`relaxml/Llama-1-13b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8PRVQ-4Bit) |
+|                  | Llama 1 7b  | 4           | [`relaxml/Llama-1-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8PRVQ-4Bit)   |
+|		   | Mistral 7b  | 4	       | [`relaxml/Mistral-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-4Bit)   |
+|		   | OpenHermes 2.5 | 4	       | [`relaxml/Openhermes-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-4Bit)   |
 
 
 ## CUDA Graphs

@@ -580,6 +580,37 @@ class="math inline">\(\le \sqrt{10}\)</span> plus 29 elements from <span
 class="math inline">\(|\hat{D_8}|\)</span> that have norm <span
 class="math inline">\(\sqrt{12}\)</span>. The exact elements chosen can
 be found in our code.</p>
+<h4 id="residual-vector-quantization">Residual Vector Quantization</h4>
+<p>The <span class="math inline">\(E_8\)</span> lattice works well for
+low bitrates, but quickly becomes intractable at higher bitrates. For
+example, a 4 bit <span class="math inline">\(E_8\)</span>-based codebook
+would have size <span class="math inline">\(2^{4*8} = 2^{32}\)</span>.
+Projecting onto a size <span class="math inline">\(2^{32}\)</span>
+codebook is intractable, and even using a “smarter” packing like E8P
+would still require projecting onto <span
+class="math inline">\(2^{24}\)</span> elements. To deal with this issue,
+we use residual vector quantization (RVQ) to get the benefits of lattice
+codebooks and QuIP# at higher bitrates. RVQ quantizes a vector <span
+class="math inline">\(x\)</span> to <span
+class="math inline">\(p\)</span> bits with a set <span
+class="math inline">\(q\)</span> of <span
+class="math inline">\(q_i\)</span> bit codebooks (denoted <span
+class="math inline">\(RVQ(x, p, q)\)</span> where <span
+class="math inline">\(p = \sum_{0 \le i &lt; |q|} q_i\)</span>) by
+repeatedly quantizing the quantization residual. That is, <span
+class="math inline">\(RVQ(x, p, q) = \sum_{0 \le i &lt; |q|}
+\delta_i\)</span> where <span class="math inline">\(\delta_i =
+Q_{q_i}\left(\frac{x - \sum_{0 \le j &lt; i}\delta_j}{s_i} \right)
+s_i\)</span>, <span class="math inline">\(Q_{q_i}(\cdot)\)</span>
+denotes quantizing to a <span class="math inline">\(q_i\)</span> bit
+codebook, and <span class="math inline">\(s_i \in \mathbb{R}\)</span>.
+Using RVQ, we can quantize to 4 bits by quantizing with the 2 bit E8P
+codebook twice. We can also quantize to 3 bits by using the 2 bit E8P
+codebook and a 1 bit <span class="math inline">\(E_8\)</span> codebook
+(elements of <span class="math inline">\(E_8\)</span> with norm <span
+class="math inline">\(\le 2\)</span> and 15 elements of <span
+class="math inline">\(E_8\)</span> with norm 4). We present results for
+these 3 and 4 bit models under “E8P RVQ.”</p>
 <h4 id="codebook-errors">Codebook Errors</h4>
 <p>To show the optimality of our lattice codebooks, we plotted the
 minimum achievable elementwise MSE of quantizing a <span
@@ -593,7 +624,7 @@ integer grids.</p>
 class="math inline">\((k, y)\)</span> where</p>
 <p><span class="math display">\[y = \min_{s \in \mathbb{R}^+}
 \frac{1}{n}\left\|\mbox{quantize}\left(\frac{\mathcal{N}(0_n, I_n)}{s},
-\mbox{codebook}\right)*s - \mathcal{N}(0_n, I_n)\right\|^2\]</span></p>
+\mbox{codebook}\right)s - \mathcal{N}(0_n, I_n)\right\|^2\]</span></p>
 <figure>
 <img src="img/lattice_err.png" title="Lattice Errors"
 alt="Lowest element-wise mean squared error (MSE) achievable for quantizing a multivariate Gaussian to various codebooks. The E_8 lattice achieves the densest unit-sphere packing in 8 dimensions and our derivative codebooks have the lowest MSE." />
@@ -619,8 +650,11 @@ This is reflected in the MSE plot, where it sits slightly above the
 exist a <span class="math inline">\(E_8\)</span> codebook with exactly 2
 bits, so E8P is still practically superior.</p>
 <h3 id="results">Results</h3>
-<p>Here, we present quantization results using QuIP# on Llama 1 and 2
-models. All models were quantized using the Hadamard transform for
+<p>Here, we present an overview of quantization results using QuIP# on
+Llama 1 and 2 models. Full results are available <a
+href="https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing">here</a>.</p>
+<h4 id="quip-2-bit">QuIP 2 Bit</h4>
+<p>All models were quantized using the Hadamard transform for
 incoherence processing and a weight scale factor of roughly 0.9 times
 the optimal scale for a multivariate Gaussian to compensate for
 inter-layer interactions. Furthermore, all Llama 2 models were evaluated
@@ -633,44 +667,37 @@ quantized to 2 bits using the E8P codebook. QuIP# achieves excellent
 performance across all model sizes on both language modeling and zero
 shot tasks. Furthermore, on the zero-shot tasks (ArcC, ArcE, BoolQ,
 PiQA, WinoGrande), QuIP# models achieve near-native performance with
-minimal degradation. Additional results are available <a
-href="https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing">here</a>.</p>
-<div style="margin-left: -6%;
+minimal degradation.</p>
+<div style="margin-left: -1%;
             margin-right: auto;
-            width: 112%;">
+            width: 102%;">
 <table>
 <caption>QuIP# results across all Llama 1 and 2 models. QuIP# achieves
-near-native performance at 2 bits on language modeling (C4, Wiki) and
-zero shot (ArcC, ArcE, BoolQ, PiQA, WinoGrande) tasks.</caption>
+near-native performance on language modeling (C4, Wiki, lower is better)
+and zero shot (ArcC, ArcE, BoolQ, PiQA, WinoGrande, higher is better)
+tasks.</caption>
 <colgroup>
 <col style="width: 6%" />
-<col style="width: 6%" />
+<col style="width: 19%" />
+<col style="width: 8%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
 <col style="width: 10%" />
-<col style="width: 11%" />
-<col style="width: 10%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-<col style="width: 10%" />
-<col style="width: 20%" />
+<col style="width: 9%" />
+<col style="width: 17%" />
 </colgroup>
 <thead>
 <tr class="header">
 <th style="text-align: center;">Model</th>
 <th style="text-align: center;">Method</th>
-<th style="text-align: center;">C4 <span
-class="math inline">\(\downarrow\)</span></th>
-<th style="text-align: center;">Wiki <span
-class="math inline">\(\downarrow\)</span></th>
-<th style="text-align: center;">ArcC <span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">ArcE <span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">BoolQ <span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">PiQA <span
-class="math inline">\(\uparrow\)</span></th>
-<th style="text-align: center;">WinoGrande <span
-class="math inline">\(\uparrow\)</span></th>
+<th style="text-align: center;">C4</th>
+<th style="text-align: center;">Wiki</th>
+<th style="text-align: center;">ArcC</th>
+<th style="text-align: center;">ArcE</th>
+<th style="text-align: center;">BoolQ</th>
+<th style="text-align: center;">PiQA</th>
+<th style="text-align: center;">WinoGrande</th>
 </tr>
 </thead>
 <tbody>
@@ -687,7 +714,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">2-70B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">6.529</td>
 <td style="text-align: center;">4.158</td>
 <td style="text-align: center;">0.472</td>
@@ -709,7 +736,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">2-13B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">8.755</td>
 <td style="text-align: center;">6.058</td>
 <td style="text-align: center;">0.371</td>
@@ -731,7 +758,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">2-7B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">12.062</td>
 <td style="text-align: center;">8.224</td>
 <td style="text-align: center;">0.325</td>
@@ -753,7 +780,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">1-65b</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">6.744</td>
 <td style="text-align: center;">4.566</td>
 <td style="text-align: center;">0.436</td>
@@ -775,7 +802,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">1-30B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">7.471</td>
 <td style="text-align: center;">5.317</td>
 <td style="text-align: center;">0.429</td>
@@ -797,7 +824,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">1-13B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">8.425</td>
 <td style="text-align: center;">6.381</td>
 <td style="text-align: center;">0.387</td>
@@ -819,7 +846,7 @@ class="math inline">\(\uparrow\)</span></th>
 </tr>
 <tr class="even">
 <td style="text-align: center;">1-7B</td>
-<td style="text-align: center;">QuIP#</td>
+<td style="text-align: center;">QuIP# 2 bit</td>
 <td style="text-align: center;">10.970</td>
 <td style="text-align: center;">8.286</td>
 <td style="text-align: center;">0.352</td>
@@ -831,5 +858,33 @@ class="math inline">\(\uparrow\)</span></th>
 </tbody>
 </table>
 </div>
+<h4 id="quip-3-and-4-bit">QuIP 3 and 4 Bit</h4>
+<p>Using residual vector quantization (RVQ) allows us to get the
+benefits of vector quantization and lattice codebooks at higher
+bitrates. The charts below plot the perplexity gap of QuIP#, AWQ, and
+OmniQuant models at 3 and 4 bits to a FP16 baseline. We report numbers
+without grouping (W3A16) since grouping adds bits. For example, a
+groupsize of 128 adds <span class="math inline">\(\frac{16}{128} =
+\frac{1}{8}\)</span> bit per weight, which is a significant difference.
+AWQ and OmniQuant numbers are from the <a
+href="https://arxiv.org/abs/2308.13137">OmniQuant paper</a>. At both bit
+levels, QuIP# significantly closes the gap to FP16, outperforming AWQ
+and OmniQuant. QuIP# 3 bit approaches AWQ 4 bit and in some cases even
+outperforms AWQ 4 bit.</p>
+<figure>
+<img src="img/3bit.svg"
+alt="QuIP# 3 bit models significantly outperform AWQ and OmniQuant 3 bit models. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models." />
+<figcaption aria-hidden="true">QuIP# 3 bit models significantly
+outperform AWQ and OmniQuant 3 bit models. QuIP# 3 bit models approach
+AWQ 4 bit models and in some cases outperform AWQ 4 bit
+models.</figcaption>
+</figure>
+<figure>
+<img src="img/4bit.svg"
+alt="QuIP# 4 bit models futher close the perplexity gap between pure 4 bit models and FP16, achieving near-native performance." />
+<figcaption aria-hidden="true">QuIP# 4 bit models futher close the
+perplexity gap between pure 4 bit models and FP16, achieving near-native
+performance.</figcaption>
+</figure>
 </body>
 </html>

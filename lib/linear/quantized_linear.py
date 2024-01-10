@@ -19,7 +19,9 @@ class QuantizedLinear(nn.Module):
                  outlier_channel_split=False,
                  rank=-1,
                  rescale_WH=False,
-                 bias=False):
+                 bias=False,
+                 resid_scale_override=-1,
+    ):
         super().__init__()
 
         self.in_features = in_features
@@ -27,6 +29,7 @@ class QuantizedLinear(nn.Module):
         self.outlier_channel_split = outlier_channel_split
         self.rank = rank
         self.rescale_WH = rescale_WH
+        self.resid_scale_override = resid_scale_override
 
         self.has_bias = bias
         if self.has_bias:
@@ -51,14 +54,14 @@ class QuantizedLinear(nn.Module):
         if pack_out:
             self.register_buffer(
                 "Qidxs",
-                torch.zeros(out_features // packsz,
-                            in_features // codesz,
+                torch.zeros(int(out_features / packsz),
+                            int(in_features / codesz),
                             dtype=dtype_from_str(idx_dtype)))
         else:
             self.register_buffer(
                 "Qidxs",
                 torch.zeros(out_features,
-                            in_features // (codesz * packsz),
+                            int(in_features / (codesz * packsz)),
                             dtype=dtype_from_str(idx_dtype)))
 
         self.register_buffer("codebook_id", torch.tensor(0))
@@ -87,13 +90,23 @@ class QuantizedLinear(nn.Module):
                     f"Saved weights version ({self.codebook_version}) does not match the "\
                     f"codebook version ({self.codebook_class.codebook.version}). "\
                     "Please download the latest weights from https://huggingface.co/relaxml")
+
+            Qidxs_dev = self.Qidxs.device
+            self.Qidxs = self.Qidxs.cpu()
+            split_qidxs = self.codebook_class.maybe_unpack_idxs(self.Qidxs)
+            self.Qidxs_list = []
+            for i in range(len(split_qidxs)):
+                self.register_buffer(f'Qidxs_{i}', split_qidxs[i].to(Qidxs_dev))
+                exec(f'self.Qidxs_list.append(self.Qidxs_{i})')
+            del self.Qidxs
+            
             self.built_codebook_class = True
 
         if self.outlier_channel_split:
             input = input[..., self.ocs_dupe_inds]
 
         result = self.codebook_class(input,
-                                     self.Qidxs,
+                                     self.Qidxs_list,
                                      self.SU,
                                      self.SV,
                                      self.Wscale,
@@ -106,7 +119,8 @@ class QuantizedLinear(nn.Module):
                                      B=self.B,
                                      rescale_WH=self.rescale_WH,
                                      scaleWH=self.scaleWH,
-                                     packed=self.packed)
+                                     packed=self.packed,
+                                     resid_scale_override=self.resid_scale_override)
         if self.has_bias:
             return result + self.bias
         return result

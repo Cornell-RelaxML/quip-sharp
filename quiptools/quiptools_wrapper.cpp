@@ -36,13 +36,6 @@ void decompress_d4_origorder(
     torch::Tensor Y         // m x n
 );
 
-void decompress_e8p_origorder(
-    torch::Tensor YIs,      // m x (n/8)
-    torch::Tensor CB,       // 256 x 8
-    torch::Tensor CB_even_flips, // 256
-    torch::Tensor &Y         // m x n
-);
-
 torch::Tensor decompress_packed_e8p(
     torch::Tensor weights_compressed,      // m x (n/8)
     torch::Tensor codebook_abs       // 256 x 8
@@ -60,6 +53,12 @@ void decompress_hi4b1c_packed(
     torch::Tensor &Y        // m x n
 );
 
+void decompress_e81b_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,       // 256 x 8
+    torch::Tensor &Y        // m x n
+);
+
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("lookupmatmul_d4_k8", &lookupmatmul_d4_k8, "lookupmatmul_d4_k8");
@@ -67,9 +66,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("lookupmatmul_d4_k32", &lookupmatmul_d4_k32, "lookupmatmul_d4_k32");
   m.def("decompress_d4", &decompress_d4, "decompress_d4");
   m.def("decompress_d4_origorder", &decompress_d4_origorder, "decompress_d4_origorder");
-  m.def("decompress_e8p_origorder", &decompress_e8p_origorder, "decompress_e8p_origorder");
   m.def("decompress_packed_e8p", &decompress_packed_e8p, "decompress_packed_e8p");
   m.def("decode_matvec_e8p", &decode_matvec_e8p, "decode_matvec_e8p");
   m.def("decompress_hi4b1c_packed", &decompress_hi4b1c_packed, "decompress_hi4b1c_packed");
+  m.def("decompress_e81b_packed", &decompress_e81b_packed, "decompress_e81b_packed");
 }
 

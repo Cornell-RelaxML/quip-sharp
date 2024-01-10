@@ -1,3 +1,6 @@
+"""
+4 bit half integer grid (-15/2, -13/2, ..., 15/2)
+"""
 import torch
 from torch import nn
 import quiptools_cuda
@@ -24,7 +27,7 @@ class HI4B1C_codebook(nn.Module):
         self.packsz = 8
         self.pack_out = False
         self.version = 0
-
+        
         self.register_buffer('grid', _HI4B1C_CACHED)
         if not inference:
             self.register_buffer('grid_norm', _HI4B1C_NORM_CACHED)
@@ -46,7 +49,7 @@ class HI4B1C_codebook(nn.Module):
         Xqidx = (2 * X @ grid.T - grid_norm).argmax(-1)
         return grid[Xqidx], Xqidx
 
-    def quantize(self, X, return_idx=True):
+    def quantize(self, X, return_idx=True, **kwargs):
         vals, idx = self.round(X, self.grid, self.grid_norm)
         if not return_idx:
             return vals
@@ -84,9 +87,12 @@ class QuantizedHI4B1CLinear(nn.Module):
         super().__init__()
         self.codebook = HI4B1C_codebook(inference=True).to(torch.float16).to(device)
 
+    def maybe_unpack_idxs(self, idxs):
+        return (idxs,)
+        
     def forward(self,
                 input,
-                Qidxs,
+                Qidxs_list,
                 SU,
                 SV,
                 Wscale,
@@ -99,7 +105,9 @@ class QuantizedHI4B1CLinear(nn.Module):
                 B=None,
                 rescale_WH=False,
                 scaleWH=None,
-                packed=False):
+                packed=False,
+                **kwargs):
+        Qidxs = Qidxs_list[0]
         n, m = len(SU), len(SV)
 
         x = input.view(-1, n).to(torch.float32)
