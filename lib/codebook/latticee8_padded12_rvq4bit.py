@@ -1,12 +1,6 @@
 """
-E8 2 bit, or E8P.
-
-D8^ = D8 + 1/2 intersected with ball of radius sqrt(10)
-|D8^| has 227 entries
-We then add 29 entries from the set of vectors with 5 3/2 and 3 1/2
-The total codebook is all 2^7 flips of these 256 entries (2^15) +- 1/4
-which makes 2^16 entries.
-This corresponds to a subset of E8 + 1/4
+E8 4 bit.
+2 2 bit E8P codebooks with RVQ.
 """
 import torch
 import math
@@ -110,17 +104,18 @@ _E8P_PACKED_ABS_CACHED = get_packed_abs_grid()
 _E8P_GRID, _E8P_GRID_IDX, _PARITY_IDX = get_full_grid(_E8P_PACKED_ABS_CACHED)
 
 
-class E8P12_codebook(nn.Module):
+class E8P12RVQ4B_codebook(nn.Module):
 
     def __init__(self, inference=False):
-        super(E8P12_codebook, self).__init__()
+        super(E8P12RVQ4B_codebook, self).__init__()
         self.opt_scale = 1.03
         self.codesz = _E8P_CODESZ
         self.idx_dtype = torch.int64
-        self.packsz = 4
+        self.packsz = 2 # fudged, the second half of Qidxs is the residual
         self.pack_out = False
         self.version = 1
-
+        self.opt_resid_scale = 3.45
+        
         self.register_buffer('grid_packed_abs', _E8P_PACKED_ABS_CACHED)
 
         if not inference:
@@ -140,12 +135,30 @@ class E8P12_codebook(nn.Module):
             self.register_buffer('bit_map', 2**torch.arange(8))
             '''
             self.to('cuda')
-            samples = torch.distributions.multivariate_normal.MultivariateNormal(torch.zeros(8), torch.eye(8)).rsample([2000000]).cuda()
-            for s in torch.arange(0.8, 1.2, 0.01):
-                print(s, ((self.quantize(samples*s, False)/s - samples).norm(dim=-1)**2).mean())
+            samples = torch.distributions.multivariate_normal.MultivariateNormal(
+                torch.zeros(8), torch.eye(8)).rsample([1000000]).reshape(50, 20000, 8)
+
+            from scipy.optimize import minimize_scalar
+            def opt_err_cvx(fn):
+                res = minimize_scalar(fn, bounds=(0.1, 100))
+                scale = res.x.item()
+                err = res.fun
+                return err, scale
+            
+            for s in torch.arange(0.8, 1.1, 0.01):
+                quantized = samples.clone()
+                for i in range(len(samples)):
+                    quantized[i] = self.quantize(samples[i].cuda()*s, False).cpu()/s
+                resids = samples - quantized
+                def test_sr(sr):
+                    totals = quantized.clone()
+                    for j in range(len(resids)):
+                        totals[j] += self.quantize(resids[j].cuda()*sr, False).cpu()/sr
+                    return (totals - samples).norm().cpu()**2 / totals.numel()
+                err, scale = opt_err_cvx(test_sr)
+                print(s, scale, err)
             exit()
             '''
-
     def round(self, X, grid, grid_norm):
         assert X.shape[-1] == self.codesz
         Xqidx = (2 * X @ grid.T - grid_norm).argmax(-1)
@@ -168,7 +181,7 @@ class E8P12_codebook(nn.Module):
         idx = (abs_idx << 8) + mask_idx
         return vals, idx, err
 
-    def quantize(self, X, return_idx=True, **kwargs):
+    def quantize_e8p(self, X):
         X_plus = X + 1 / 4  # quantize X to D8^ - 1/4
         X_minus = X - 1 / 4  # quantize X to D8^ + 1/4
 
@@ -178,49 +191,67 @@ class E8P12_codebook(nn.Module):
         which = plus_err < minus_err
         final_vals = torch.where(which.unsqueeze(-1), plus_vals - 1 / 4, minus_vals + 1 / 4)
         final_idx = torch.where(which, plus_idx, minus_idx)
-       
-        if return_idx:
-            return final_vals, final_idx
+        return final_vals, final_idx
 
+    def quantize(self, X, return_idx=True, resid_scale_override=-1, **kwargs):
+        init_vals, init_idxs = self.quantize_e8p(X)
+        resid_scale = resid_scale_override if resid_scale_override > 0 else self.opt_resid_scale
+
+        resid = (X - init_vals) * resid_scale
+        resid_vals, resid_idxs = self.quantize_e8p(resid)
+        final_vals = init_vals + resid_vals / resid_scale
+        final_idxs = (init_idxs << 16) + resid_idxs
+        if return_idx:
+            return final_vals, final_idxs
         return final_vals
 
-    def maybe_pack_idxs(self, idxs):        
-        m, n = idxs.shape
-        idxs = idxs.view(m//2, 2, (n*8)//16, 2).transpose(1, 2).contiguous()
+    def maybe_pack_idxs(self, idxs):
+        init_idxs = idxs >> 16
+        resid_idxs = idxs & ((1 << 16) - 1)
+        def pack_one(idxs):
+            m, n = idxs.shape
+            idxs = idxs.view(m//2, 2, (n*8)//16, 2).transpose(1, 2).contiguous()
 
-        abs32 = (idxs[:, :, 0, 0] >> 8) + \
-            ((idxs[:, :, 1, 0] >> 8) << 8) + \
-            ((idxs[:, :, 0, 1] >> 8) << 16) + \
-            ((idxs[:, :, 1, 1] >> 8) << 24)
+            abs32 = (idxs[:, :, 0, 0] >> 8) + \
+                ((idxs[:, :, 1, 0] >> 8) << 8) + \
+                ((idxs[:, :, 0, 1] >> 8) << 16) + \
+                ((idxs[:, :, 1, 1] >> 8) << 24)
 
-        sign32 = torch.zeros(abs32.shape, dtype=abs32.dtype, device=abs32.device)
-        for i in range(4):
-            wt = idxs[:, :, i % 2, i // 2]
-            for j in range(8):
-                sign32 += ((wt >> j) & 1) << (4*j + i)
+            sign32 = torch.zeros(abs32.shape, dtype=abs32.dtype, device=abs32.device)
+            for i in range(4):
+                wt = idxs[:, :, i % 2, i // 2]
+                for j in range(8):
+                    sign32 += ((wt >> j) & 1) << (4*j + i)
 
-        output = (sign32 << 32) + abs32
-        output = output.reshape(m//16, 8, n//8, 4).transpose(1, 2).contiguous()
-        return output.view(m, n//4)
+            output = (sign32 << 32) + abs32
+            output = output.reshape(m//16, 8, n//8, 4).transpose(1, 2).contiguous()
+            return output.view(m, n//4)
+        return torch.concat([pack_one(init_idxs), pack_one(resid_idxs)], dim=-1)
         
     def by_idxs(self, idxs, **kwargs):
-        m, n = idxs.shape
+        init_idxs = idxs[:, :idxs.shape[-1]//2].contiguous()
+        resid_idxs = idxs[:, idxs.shape[-1]//2:].contiguous()
+        m, n = init_idxs.shape
         W_decompressed = quiptools_cuda.decompress_packed_e8p(
-            idxs.view(m//16, n//2, 8, 4),
+            init_idxs.view(m//16, n//2, 8, 4),
             self.grid_packed_abs
-        )
+        ) + quiptools_cuda.decompress_packed_e8p(
+            resid_idxs.view(m//16, n//2, 8, 4),
+            self.grid_packed_abs
+        ) / self.opt_resid_scale
         return W_decompressed
 
 
 
-class QuantizedE8P12Linear(nn.Module):
+class QuantizedE8P12RVQ4BLinear(nn.Module):
 
     def __init__(self, device):
         super().__init__()
-        self.codebook = E8P12_codebook(inference=True).to(torch.float16).to(device)
+        self.codebook = E8P12RVQ4B_codebook(inference=True).to(torch.float16).to(device)
 
     def maybe_unpack_idxs(self, idxs):
-        return (idxs,)
+        split = idxs.shape[-1] // 2
+        return (idxs[:, :split].contiguous(), idxs[:, split:].contiguous())
         
     def forward(self,
                 input,
@@ -237,6 +268,7 @@ class QuantizedE8P12Linear(nn.Module):
                 B=None,
                 rescale_WH=False,
                 scaleWH=None,
+                resid_scale_override=-1,
                 **kwargs):
         n, m = len(SU), len(SV)
 
@@ -250,17 +282,27 @@ class QuantizedE8P12Linear(nn.Module):
             Bx = x @ B.t().to(torch.float32)
             ABx = Bx @ A.t().to(torch.float32)
 
+        resid_scale = resid_scale_override if resid_scale_override > 0 else \
+            self.codebook.opt_resid_scale
         if x.size(0) == 1:
-            x = quiptools_cuda.decode_matvec_e8p(
-                x[0].to(torch.float16),
+            x16 = x[0].to(torch.float16)
+            x = (quiptools_cuda.decode_matvec_e8p(
+                x16,
                 Qidxs_list[0].view(m//16, n//64, 8, 4),
                 self.codebook.grid_packed_abs
-            ).to(torch.float32)
+            ) + quiptools_cuda.decode_matvec_e8p(
+                x16 / resid_scale,
+                Qidxs_list[1].view(m//16, n//64, 8, 4),
+                self.codebook.grid_packed_abs
+            )).to(torch.float32)
         else:
             W_decompressed = quiptools_cuda.decompress_packed_e8p(
                 Qidxs_list[0].view(m//16, n//64, 8, 4),
                 self.codebook.grid_packed_abs
-            )
+            ) + quiptools_cuda.decompress_packed_e8p(
+                Qidxs_list[1].view(m//16, n//64, 8, 4),
+                self.codebook.grid_packed_abs
+            ) / resid_scale
             x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
 
         x *= Wscale

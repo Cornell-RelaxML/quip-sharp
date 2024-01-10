@@ -127,14 +127,14 @@ class D4_codebook(nn.Module):
         self.packsz = 1
         self.pack_out = False
         self.version = 0
-
+        
     def _quantize_noscale(self, X, return_idx=True):
         Xqidx = (2 * X @ self.grid.T - self.grid_norm).argmax(1)
         if return_idx:
             return self.grid[Xqidx, :], Xqidx.to(self.idx_dtype)
         return self.grid[Xqidx, :]
 
-    def quantize(self, X, return_idx=True):
+    def quantize(self, X, return_idx=True, **kwargs):
         assert X.shape[-1] == self.codesz
         return self._quantize_noscale(X, return_idx=return_idx)
 
@@ -151,9 +151,12 @@ class QuantizedD4Linear(nn.Module):
         super().__init__()
         self.codebook = D4_codebook(inference=True).to(torch.float16).to(device)
 
+    def maybe_unpack_idxs(self, idxs):
+        return (idxs,)
+        
     def forward(self,
                 input,
-                Qidxs,
+                Qidxs_list,
                 SU,
                 SV,
                 Wscale,
@@ -167,6 +170,7 @@ class QuantizedD4Linear(nn.Module):
                 rescale_WH=False,
                 scaleWH=None,
                 **kwargs):
+        Qidxs = Qidxs_list[0]
         (m, n) = Qidxs.shape
 
         x = input.view(-1, _D4_CODESZ * n).to(torch.float32)

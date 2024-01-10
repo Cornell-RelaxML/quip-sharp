@@ -233,7 +233,9 @@ class LlamaMLP(nn.Module):
                                        config.quip_params['idx_dtype'],
                                        config.quip_params.get('codebook_version', 0),
                                        rank=config.quip_params['lora_rank'],
-                                       rescale_WH=config.quip_params['rescale_WH'])
+                                       rescale_WH=config.quip_params['rescale_WH'],
+                                       resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.gate_proj = QuantizedLinear(self.hidden_size,
                                          self.intermediate_size,
                                          config.quip_params['codesz'],
@@ -242,7 +244,9 @@ class LlamaMLP(nn.Module):
                                          config.quip_params['idx_dtype'],
                                          config.quip_params.get('codebook_version', 0),
                                          rank=config.quip_params['lora_rank'],
-                                         rescale_WH=config.quip_params['rescale_WH'])
+                                         rescale_WH=config.quip_params['rescale_WH'],
+                                         resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.down_proj = QuantizedLinear(
             self.config.quip_params['ocs_down_size'] if \
             self.config.quip_params['outlier_channel_split'] else self.intermediate_size,
@@ -254,7 +258,9 @@ class LlamaMLP(nn.Module):
             config.quip_params.get('codebook_version', 0),
             outlier_channel_split=self.config.quip_params['outlier_channel_split'],
             rank=self.config.quip_params['lora_rank'],
-            rescale_WH=self.config.quip_params['rescale_WH'])
+            rescale_WH=self.config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.register_buffer('up_scale', nn.Parameter(torch.ones(())))
         self.register_buffer('gate_scale', nn.Parameter(torch.ones(())))
         self.register_buffer('down_scale', nn.Parameter(torch.ones(())))
@@ -311,7 +317,9 @@ class LlamaAttention(nn.Module):
             config.quip_params['idx_dtype'],
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'])
+            rescale_WH=config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.k_proj = QuantizedLinear(
             self.hidden_size,
             self.num_key_value_heads * self.head_dim,
@@ -321,7 +329,9 @@ class LlamaAttention(nn.Module):
             config.quip_params['idx_dtype'],
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'])
+            rescale_WH=config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.v_proj = QuantizedLinear(
             self.hidden_size,
             self.num_key_value_heads * self.head_dim,
@@ -331,7 +341,9 @@ class LlamaAttention(nn.Module):
             config.quip_params['idx_dtype'],
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'])
+            rescale_WH=config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.o_proj = QuantizedLinear(self.num_heads * self.head_dim,
                                       self.hidden_size,
                                       config.quip_params['codesz'],
@@ -340,7 +352,9 @@ class LlamaAttention(nn.Module):
                                       config.quip_params['idx_dtype'],
                                       config.quip_params.get('codebook_version', 0),
                                       rank=config.quip_params['lora_rank'],
-                                      rescale_WH=config.quip_params['rescale_WH'])
+                                      rescale_WH=config.quip_params['rescale_WH'],
+                                      resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
 
         self.register_buffer('q_scale', nn.Parameter(torch.ones(())))
         self.register_buffer('k_scale', nn.Parameter(torch.ones(())))

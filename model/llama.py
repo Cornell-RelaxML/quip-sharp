@@ -236,7 +236,9 @@ class LlamaMLP(nn.Module):
             config.quip_params['idx_dtype'],
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'])
+            rescale_WH=config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.down_proj = QuantizedLinear(
             self.config.quip_params['ocs_down_size'] if \
             self.config.quip_params['outlier_channel_split'] else self.intermediate_size,
@@ -248,7 +250,9 @@ class LlamaMLP(nn.Module):
             config.quip_params.get('codebook_version', 0),
             outlier_channel_split=self.config.quip_params['outlier_channel_split'],
             rank=self.config.quip_params['lora_rank'],
-            rescale_WH=self.config.quip_params['rescale_WH'])
+            rescale_WH=self.config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
@@ -305,7 +309,9 @@ class LlamaAttention(nn.Module):
             config.quip_params['idx_dtype'],
             config.quip_params.get('codebook_version', 0),
             rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'])
+            rescale_WH=config.quip_params['rescale_WH'],
+            resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
         
         self.o_proj = QuantizedLinear(self.num_heads * self.head_dim,
                                       self.hidden_size,
@@ -315,7 +321,9 @@ class LlamaAttention(nn.Module):
                                       config.quip_params['idx_dtype'],
                                       config.quip_params.get('codebook_version', 0),
                                       rank=config.quip_params['lora_rank'],
-                                      rescale_WH=config.quip_params['rescale_WH'])
+                                      rescale_WH=config.quip_params['rescale_WH'],
+                                      resid_scale_override=config.quip_params.get('resid_scale_override', -1),
+        )
 
         self._init_rope()
 

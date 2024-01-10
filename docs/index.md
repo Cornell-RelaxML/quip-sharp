@@ -197,6 +197,18 @@ The question remains then of how to choose $S$.
 In our implementation, we set $S$ to be the 227 elements of $|\hat{D_8}|$ with norm $\le \sqrt{10}$ plus 29 elements from $|\hat{D_8}|$ that have norm $\sqrt{12}$.
 The exact elements chosen can be found in our code.
 
+#### Residual Vector Quantization
+
+The $E_8$ lattice works well for low bitrates, but quickly becomes intractable at higher bitrates.
+For example, a 4 bit $E_8$-based codebook would have size $2^{4*8} = 2^{32}$.
+Projecting onto a size $2^{32}$ codebook is intractable, and even using a "smarter" packing like E8P would still require projecting onto $2^{24}$ elements.
+To deal with this issue, we use residual vector quantization (RVQ) to get the benefits of lattice codebooks and QuIP# at higher bitrates.
+RVQ quantizes a vector $x$ to $p$ bits with a set $q$ of $q_i$ bit codebooks (denoted $RVQ(x, p, q)$ where $p = \sum_{0 \le i < |q|} q_i$) by repeatedly quantizing the quantization residual.
+That is, $RVQ(x, p, q) = \sum_{0 \le i < |q|} \delta_i$ where $\delta_i = Q_{q_i}\left(\frac{x - \sum_{0 \le j < i}\delta_j}{s_i} \right) s_i$, $Q_{q_i}(\cdot)$ denotes quantizing to a $q_i$ bit codebook, and $s_i \in \mathbb{R}$.
+Using RVQ, we can quantize to 4 bits by quantizing with the 2 bit E8P codebook twice.
+We can also quantize to 3 bits by using the 2 bit E8P codebook and a 1 bit $E_8$ codebook (elements of $E_8$ with norm $\le 2$ and 15 elements of $E_8$ with norm 4). 
+We present results for these 3 and 4 bit models under "E8P RVQ."
+
 
 #### Codebook Errors
 
@@ -206,7 +218,7 @@ The half integer codebooks are formed from the $n$-dimensional half integer grid
 
 Specifically, each point in the graph below plots $(k, y)$ where
 
-$$y = \min_{s \in \mathbb{R}^+} \frac{1}{n}\left\|\mbox{quantize}\left(\frac{\mathcal{N}(0_n, I_n)}{s}, \mbox{codebook}\right)*s - \mathcal{N}(0_n, I_n)\right\|^2$$
+$$y = \min_{s \in \mathbb{R}^+} \frac{1}{n}\left\|\mbox{quantize}\left(\frac{\mathcal{N}(0_n, I_n)}{s}, \mbox{codebook}\right)s - \mathcal{N}(0_n, I_n)\right\|^2$$
 
 [lattice_err]: img/lattice_err.png "Lattice Errors"
 ![Lowest element-wise mean squared error (MSE) achievable for quantizing a multivariate Gaussian to various codebooks. The $E_8$ lattice achieves the [densest unit-sphere packing in 8 dimensions](https://en.wikipedia.org/wiki/Kissing_number) and our derivative codebooks have the lowest MSE.][lattice_err]
@@ -220,7 +232,10 @@ However, there does not exist a $E_8$ codebook with exactly 2 bits, so E8P is st
 
 ### Results
 
-Here, we present quantization results using QuIP# on Llama 1 and 2 models.
+Here, we present an overview of quantization results using QuIP# on Llama 1 and 2 models.
+Full results are available [here](https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing).
+
+#### QuIP 2 Bit 
 All models were quantized using the Hadamard transform for incoherence processing and a weight scale factor of roughly 0.9 times the optimal scale for a multivariate Gaussian to compensate for inter-layer interactions.
 Furthermore, all Llama 2 models were evaluated using a context lenth of 4096 and all Llama 1 models were evaluated with context length 2048; these numbers match the context length the models were trained with.
 These and other models can be found in our [Hugging Face repository](https://huggingface.co/relaxml).
@@ -228,27 +243,41 @@ These and other models can be found in our [Hugging Face repository](https://hug
 The table below contains results for all Llama 1 and 2 models when quantized to 2 bits using the E8P codebook.
 QuIP# achieves excellent performance across all model sizes on both language modeling and zero shot tasks.
 Furthermore, on the zero-shot tasks (ArcC, ArcE, BoolQ, PiQA, WinoGrande), QuIP# models achieve near-native performance with minimal degradation.
-Additional results are available [here](https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing).
 
 
-<div style="margin-left: -6%;
+
+<div style="margin-left: -1%;
             margin-right: auto;
-            width: 112%;">
-|   Model   |   Method  | C4 $\downarrow$ | Wiki $\downarrow$ | ArcC $\uparrow$ | ArcE $\uparrow$ | BoolQ $\uparrow$  | PiQA $\uparrow$ | WinoGrande $\uparrow$ |
-|:---------:|:---------:|:---------------:|:-----------------:|:---------------:|:---------------:|:-------------------:|:---------------:|:-------------------------------:|
+            width: 102%;">
+|   Model   |   Method  | C4 | Wiki | ArcC | ArcE | BoolQ | PiQA | WinoGrande |
+|:---------:|:-------------------------------:|:------------:|:--------------:|:--------------:|:--------------:|:----------------:|:--------------:|:---------------------------:|
 |   2-70B   |    fp16   |      5.533      |       3.120       |      0.480      |      0.597      |       0.766       |      0.809      |         0.768         |
-| 2-70B | QuIP# |    6.529    |     4.158     |    0.472    |    0.595    |     0.791     |    0.786    |       0.742       |
+| 2-70B | QuIP# 2 bit |    6.529    |     4.158     |    0.472    |    0.595    |     0.791     |    0.786    |       0.742       |
 |   2-13B   |    fp16   |      6.520      |       4.574       |      0.443      |      0.580      |       0.690       |      0.790      |         0.699         |
-| 2-13B | QuIP# |    8.755   |     6.058     |    0.371    |    0.501    |     0.665     |    0.757    |       0.636       |
+| 2-13B | QuIP# 2 bit |    8.755   |     6.058     |    0.371    |    0.501    |     0.665     |    0.757    |       0.636       |
 |    2-7B   |    fp16   |      7.036      |       5.116       |      0.406      |      0.535      |       0.710       |      0.769      |         0.670         |
-|  2-7B | QuIP# |    12.062   |     8.224     |    0.325    |    0.428    |     0.623     |    0.712    |       0.624       |
+|  2-7B | QuIP# 2 bit |    12.062   |     8.224     |    0.325    |    0.428    |     0.623     |    0.712    |       0.624       |
 |   1-65b   |    fp16   |      5.811      |       3.532       |      0.463      |      0.588      |       0.823       |      0.809      |         0.771         |
-| 1-65b | QuIP# |    6.744    |     4.566     |    0.436    |    0.569    |     0.817     |    0.805    |       0.736       |
+| 1-65b | QuIP# 2 bit |    6.744    |     4.566     |    0.436    |    0.569    |     0.817     |    0.805    |       0.736       |
 |   1-30B   |    fp16   |      6.130      |       4.101       |      0.453      |      0.590      |       0.684       |      0.801      |         0.728         |
-| 1-30B | QuIP# |    7.471    |     5.317     |    0.429    |    0.545    |     0.669     |    0.779    |       0.718       |
+| 1-30B | QuIP# 2 bit |    7.471    |     5.317     |    0.429    |    0.545    |     0.669     |    0.779    |       0.718       |
 |   1-13B   |    fp16   |      6.798      |       5.091       |      0.444      |      0.599      |       0.684       |      0.792      |         0.701         |
-| 1-13B | QuIP# |    8.425    |     6.381     |    0.387    |    0.536   |     0.647     |    0.750    |       0.669       |
+| 1-13B | QuIP# 2 bit |    8.425    |     6.381     |    0.387    |    0.536   |     0.647     |    0.750    |       0.669       |
 |    1-7B   |    fp16   |      7.343      |       5.677       |      0.415      |      0.525      |       0.731       |      0.774      |         0.670         |
-|  1-7B | QuIP# |    10.970   |     8.286     |    0.352    |    0.464    |     0.647     |    0.720    |       0.624       |
-:QuIP# results across all Llama 1 and 2 models. QuIP# achieves near-native performance at 2 bits on language modeling (C4, Wiki) and zero shot (ArcC, ArcE, BoolQ, PiQA, WinoGrande) tasks.
+|  1-7B | QuIP# 2 bit |    10.970   |     8.286     |    0.352    |    0.464    |     0.647     |    0.720    |       0.624       |
+:QuIP# results across all Llama 1 and 2 models. QuIP# achieves near-native performance on language modeling (C4, Wiki, lower is better) and zero shot (ArcC, ArcE, BoolQ, PiQA, WinoGrande, higher is better) tasks.
 </div>
+
+#### QuIP 3 and 4 Bit
+
+Using residual vector quantization (RVQ) allows us to get the benefits of vector quantization and lattice codebooks at higher bitrates.
+The charts below plot the perplexity gap of QuIP#, AWQ, and OmniQuant models at 3 and 4 bits to a FP16 baseline.
+We report numbers without grouping (W3A16) since grouping adds bits.
+For example, a groupsize of 128 adds $\frac{16}{128} = \frac{1}{8}$ bit per weight, which is a significant difference.
+AWQ and OmniQuant numbers are from the [OmniQuant paper](https://arxiv.org/abs/2308.13137).
+At both bit levels, QuIP# significantly closes the gap to FP16, outperforming AWQ and OmniQuant.
+QuIP# 3 bit approaches AWQ 4 bit and in some cases even outperforms AWQ 4 bit.
+
+![QuIP# 3 bit models significantly outperform AWQ and OmniQuant 3 bit models. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models.](img/3bit.svg)
+
+![QuIP# 4 bit models futher close the perplexity gap between pure 4 bit models and FP16, achieving near-native performance.](img/4bit.svg)
