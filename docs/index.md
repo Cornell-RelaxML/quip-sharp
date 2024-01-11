@@ -271,7 +271,7 @@ Furthermore, on the zero-shot tasks (ArcC, ArcE, BoolQ, PiQA, WinoGrande), QuIP#
 #### QuIP 3 and 4 Bit
 
 Using residual vector quantization (RVQ) allows us to get the benefits of vector quantization and lattice codebooks at higher bitrates.
-The charts below plot the perplexity gap of QuIP#, AWQ, and OmniQuant models at 3 and 4 bits to a FP16 baseline.
+The charts below plot the Wikitext2 (Wiki in the tableabove) perplexity gap of QuIP#, AWQ, and OmniQuant models at 3 and 4 bits to a FP16 baseline.
 We report numbers without grouping (W3A16) since grouping adds bits.
 For example, a groupsize of 128 adds $\frac{16}{128} = \frac{1}{8}$ bit per weight, which is a significant difference.
 AWQ and OmniQuant numbers are from the [OmniQuant paper](https://arxiv.org/abs/2308.13137).
@@ -281,5 +281,5 @@ QuIP# 3 bit approaches AWQ 4 bit and in some cases even outperforms AWQ 4 bit.
 <div style="margin-left: -5%;
             margin-right: auto;
             width: 110%;">
-![Perplexity gap to FP16, capped at 1. QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and 4 (red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models.](img/34bit.svg)
+![Wikitext2 perplexity gap to FP16, capped at 1. QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and 4 (red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models.](img/34bit.svg)
 </div>

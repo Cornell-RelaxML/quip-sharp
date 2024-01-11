@@ -13,6 +13,7 @@ We also provide a full codebase that allows users to quantize and deploy their o
 | **QuIP#** | **2 bit** | **4.159** | **6.529** | **0.595** | **0.786** |
 
 Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2 bits, outperforming all other presented baselines.
+Results for other models available [here](https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing).
 
 ## ☞ Read more about QuIP# and how it works [here](https://cornell-relaxml.github.io/quip-sharp/)!
 

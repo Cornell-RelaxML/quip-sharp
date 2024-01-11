@@ -172,9 +172,6 @@
   <script
   src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
   type="text/javascript"></script>
-  <!--[if lt IE 9]>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
-  <![endif]-->
 </head>
 <body>
 <style>
@@ -861,25 +858,25 @@ tasks.</caption>
 <h4 id="quip-3-and-4-bit">QuIP 3 and 4 Bit</h4>
 <p>Using residual vector quantization (RVQ) allows us to get the
 benefits of vector quantization and lattice codebooks at higher
-bitrates. The charts below plot the perplexity gap of QuIP#, AWQ, and
-OmniQuant models at 3 and 4 bits to a FP16 baseline. We report numbers
-without grouping (W3A16) since grouping adds bits. For example, a
-groupsize of 128 adds <span class="math inline">\(\frac{16}{128} =
-\frac{1}{8}\)</span> bit per weight, which is a significant difference.
-AWQ and OmniQuant numbers are from the <a
-href="https://arxiv.org/abs/2308.13137">OmniQuant paper</a>. At both bit
-levels, QuIP# significantly closes the gap to FP16, outperforming AWQ
-and OmniQuant. QuIP# 3 bit approaches AWQ 4 bit and in some cases even
-outperforms AWQ 4 bit.</p>
+bitrates. The charts below plot the Wikitext2 (Wiki in the tableabove)
+perplexity gap of QuIP#, AWQ, and OmniQuant models at 3 and 4 bits to a
+FP16 baseline. We report numbers without grouping (W3A16) since grouping
+adds bits. For example, a groupsize of 128 adds <span
+class="math inline">\(\frac{16}{128} = \frac{1}{8}\)</span> bit per
+weight, which is a significant difference. AWQ and OmniQuant numbers are
+from the <a href="https://arxiv.org/abs/2308.13137">OmniQuant paper</a>.
+At both bit levels, QuIP# significantly closes the gap to FP16,
+outperforming AWQ and OmniQuant. QuIP# 3 bit approaches AWQ 4 bit and in
+some cases even outperforms AWQ 4 bit.</p>
 <div style="margin-left: -5%;
             margin-right: auto;
             width: 110%;">
 <figure>
 <img src="img/34bit.svg"
-alt="Perplexity gap to FP16, capped at 1. QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and 4 (red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models." />
-<figcaption aria-hidden="true">Perplexity gap to FP16, capped at 1.
-QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and 4
-(red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some
+alt="Wikitext2 perplexity gap to FP16, capped at 1. QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and 4 (red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some cases outperform AWQ 4 bit models." />
+<figcaption aria-hidden="true">Wikitext2 perplexity gap to FP16, capped
+at 1. QuIP# significantly outperforms AWQ and OmniQuant at 3 (blue) and
+4 (red) bits. QuIP# 3 bit models approach AWQ 4 bit models and in some
 cases outperform AWQ 4 bit models.</figcaption>
 </figure>
 </div>
