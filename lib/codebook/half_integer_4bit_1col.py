@@ -95,7 +95,6 @@ class QuantizedHI4B1CLinear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                Wscale,
                 had_left,
                 had_right,
                 K_left,
@@ -133,7 +132,7 @@ class QuantizedHI4B1CLinear(nn.Module):
         z = x @ W_decompressed.t()
 
         x = z.to(torch.float32)
-        x = x * (Wscale * num_scale)
+        x = x * num_scale
 
         if rank > 0:
             x = x + ABx.to(torch.float32)

@@ -159,7 +159,6 @@ class QuantizedD4Linear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                Wscale,
                 had_left,
                 had_right,
                 K_left,
@@ -217,7 +216,7 @@ class QuantizedD4Linear(nn.Module):
             quiptools_cuda.decompress_d4(Qidxs, self.codebook.grid, W_decompressed)
             z = x @ W_decompressed.t()
 
-        x = z.to(torch.float32) * (Wscale * 1024)
+        x = z.to(torch.float32) * 1024
         if rank > 0:
             x = x + ABx.to(torch.float32)
 

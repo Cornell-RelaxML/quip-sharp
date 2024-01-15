@@ -258,7 +258,6 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                Wscale,
                 had_left,
                 had_right,
                 K_left,
@@ -304,8 +303,6 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
                 self.codebook.grid_packed_abs
             ) / resid_scale
             x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
-
-        x *= Wscale
 
         if rank > 0:
             x = x + ABx.to(torch.float32)
