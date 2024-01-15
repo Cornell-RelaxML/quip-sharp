@@ -297,7 +297,6 @@ class E8P12RVQ3B_codebook(nn.Module):
         return W_decompressed + W_resid_decompressed / self.opt_resid_scale
 
 
-
 class QuantizedE8P12RVQ3BLinear(nn.Module):
 
     def __init__(self, device):
@@ -313,7 +312,6 @@ class QuantizedE8P12RVQ3BLinear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                Wscale,
                 had_left,
                 had_right,
                 K_left,
@@ -341,35 +339,42 @@ class QuantizedE8P12RVQ3BLinear(nn.Module):
         resid_scale = resid_scale_override if resid_scale_override > 0 else \
             self.codebook.opt_resid_scale
 
-        W_resid_decompressed = torch.zeros(
-            Qidxs_list[1].shape[0],
-            64*Qidxs_list[1].shape[-1],
-            device=Qidxs_list[1].device,
-            dtype=torch.float16
-        )
-        
-        quiptools_cuda.decompress_e81b_packed(
-            Qidxs_list[1],
-            self.codebook.e81b_grid,
-            W_resid_decompressed
-        )
+
         x16 = x.to(torch.float16)
         if x.shape[0] == 1:
-            x = (quiptools_cuda.decode_matvec_e8p(
+            x_padded = torch.zeros(8, x16.shape[1], dtype=torch.float16, device=x16.device)
+            x_padded[0] = x16[0]
+            z = torch.zeros(8, m, dtype=torch.float32, device=x_padded.device)
+            quiptools_cuda.lookupmatmul_e81b_k8(x_padded / resid_scale, Qidxs_list[1], self.codebook.e81b_grid, z)
+            
+            x = quiptools_cuda.decode_matvec_e8p(
                 x16[0],
                 Qidxs_list[0].view(m//16, n//64, 8, 4),
                 self.codebook.grid_packed_abs
-            ) + x16 @ (W_resid_decompressed / resid_scale).T).to(torch.float32)
+            ).to(torch.float32) + z[0]
+
         else:
             W_decompressed = quiptools_cuda.decompress_packed_e8p(
                 Qidxs_list[0].view(m//16, n//64, 8, 4),
                 self.codebook.grid_packed_abs
             )
+
+            W_resid_decompressed = torch.zeros(
+                Qidxs_list[1].shape[0],
+                64*Qidxs_list[1].shape[-1],
+                device=Qidxs_list[1].device,
+                dtype=torch.float16
+            )
+        
+            quiptools_cuda.decompress_e81b_packed(
+                Qidxs_list[1],
+                self.codebook.e81b_grid,
+                W_resid_decompressed
+            )
+            
             x = (x16 @ (
                 W_decompressed + W_resid_decompressed / resid_scale
             ).T).to(torch.float32)
-
-        x *= Wscale
 
         if rank > 0:
             x = x + ABx.to(torch.float32)
