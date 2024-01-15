@@ -99,6 +99,10 @@ class QuantizedLinear(nn.Module):
                 self.register_buffer(f'Qidxs_{i}', split_qidxs[i].to(Qidxs_dev))
                 exec(f'self.Qidxs_list.append(self.Qidxs_{i})')
             del self.Qidxs
+
+            # fuse Wscale into SV
+            self.SV *= self.Wscale
+            del self.Wscale
             
             self.built_codebook_class = True
 
@@ -109,7 +113,6 @@ class QuantizedLinear(nn.Module):
                                      self.Qidxs_list,
                                      self.SU,
                                      self.SV,
-                                     self.Wscale,
                                      self.had_left,
                                      self.had_right,
                                      self.K_left,
@@ -120,7 +123,7 @@ class QuantizedLinear(nn.Module):
                                      rescale_WH=self.rescale_WH,
                                      scaleWH=self.scaleWH,
                                      packed=self.packed,
-                                     resid_scale_override=self.resid_scale_override)
+                                     resid_scale_override=self.resid_scale_override).to(input.dtype)
         if self.has_bias:
             return result + self.bias
         return result
