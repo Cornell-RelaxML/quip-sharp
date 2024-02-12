@@ -1,5 +1,6 @@
 MODEL_VERSION = 1
 
+
 def check_model_version(test):
     if test != MODEL_VERSION:
         raise Exception(

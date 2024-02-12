@@ -1,9 +1,13 @@
-import torch
-import glog
 import time
 
+import glog
+import torch
+
+
 def get_graph_wrapper(cls):
+
     class GraphWrapper(cls):
+
         def __init__(self, config):
             super(GraphWrapper, self).__init__(config)
             self.built_graph = False
@@ -17,12 +21,14 @@ def get_graph_wrapper(cls):
                 s = torch.cuda.Stream()
                 s.wait_stream(torch.cuda.current_stream())
                 with torch.cuda.stream(s):
-                    super(GraphWrapper, self).forward(*self.static_args, **self.static_kwargs)
+                    super(GraphWrapper, self).forward(*self.static_args,
+                                                      **self.static_kwargs)
                 torch.cuda.current_stream().wait_stream(s)
 
                 self.graph = torch.cuda.CUDAGraph()
                 with torch.cuda.graph(self.graph):
-                    self.static_output = super(GraphWrapper, self).forward(*self.static_args, **self.static_kwargs)
+                    self.static_output = super(GraphWrapper, self).forward(
+                        *self.static_args, **self.static_kwargs)
 
                 self.built_graph = True
                 glog.info("Built CUDA graph of model.")

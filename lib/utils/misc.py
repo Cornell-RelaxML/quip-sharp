@@ -1,8 +1,10 @@
 import gc
+import pdb
+import sys
+
+import glog
 import torch
 from tqdm import tqdm
-import pdb, sys
-import glog
 
 
 def clean():
@@ -12,7 +14,8 @@ def clean():
 
 def show_metrics(hatW, W_orig, H, msg):
     err_frob = (hatW - W_orig).square().sum() / W_orig.square().sum()
-    err_proxy = (((hatW - W_orig) @ H) * (hatW - W_orig)).sum() / ((W_orig @ H) * W_orig).sum()
+    err_proxy = (((hatW - W_orig) @ H) *
+                 (hatW - W_orig)).sum() / ((W_orig @ H) * W_orig).sum()
     glog.info(f"{msg} frob  error: {err_frob}")
     glog.info(f"{msg} proxy error: {err_proxy}")
 
@@ -25,26 +28,29 @@ def compute_activation_deltas(model, devset, args, device):
         torch.zeros(args.batch_size, args.ctx_size, dtype=torch.int16).to(device)
     attention_mask = model.model._prepare_decoder_attention_mask(
         torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
-        (args.batch_size, args.ctx_size),
-        dev_emb[0:args.batch_size, :, :],
-        0)
+        (args.batch_size, args.ctx_size), dev_emb[0:args.batch_size, :, :], 0)
     attention_mask = attention_mask.to(device)
 
-    acts = [dev_emb] + [torch.zeros(*dev_emb.shape) for _ in range(len(model.model.layers))]
+    acts = [dev_emb] + [
+        torch.zeros(*dev_emb.shape) for _ in range(len(model.model.layers))
+    ]
 
-    for i in tqdm(list(range(len(model.model.layers))), desc='computing activations'):
+    for i in tqdm(list(range(len(model.model.layers))),
+                  desc='computing activations'):
         layer = model.model.layers[i]
         layer = layer.to(device)
         for j in range(args.devset_size // args.batch_size):
-            acts[i + 1][args.batch_size * j : args.batch_size * (j + 1)] = transformer_layer(
-                acts[args.batch_size * j : args.batch_size * (j + 1)].to(device),
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                use_cache=False,
-                output_attentions=False)[0].cpu()
+            acts[i + 1][args.batch_size * j:args.batch_size *
+                        (j + 1)] = transformer_layer(
+                            acts[args.batch_size * j:args.batch_size *
+                                 (j + 1)].to(device),
+                            position_ids=position_ids,
+                            attention_mask=attention_mask,
+                            use_cache=False,
+                            output_attentions=False)[0].cpu()
 
     return torch.stack(acts)
-    
+
 
 class ForkedPdb(pdb.Pdb):
     """A Pdb subclass that may be used
@@ -53,6 +59,7 @@ class ForkedPdb(pdb.Pdb):
     from lib import utils
     utils.ForkedPdb().set_trace()
     """
+
     def interaction(self, *args, **kwargs):
         _stdin = sys.stdin
         try:
