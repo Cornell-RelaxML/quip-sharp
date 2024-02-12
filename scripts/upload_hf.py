@@ -1,13 +1,17 @@
 import argparse
+
 from huggingface_hub import HfApi
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--public_repo', action='store_false', help='makes repo public')
+parser.add_argument('--public_repo',
+                    action='store_false',
+                    help='makes repo public')
 parser.add_argument('--folder_path', type=str)
 parser.add_argument('--repo_id', type=str)
-parser.add_argument('--no_multi_commits', action='store_false', help='in chunks for larger uploads')
+parser.add_argument('--no_multi_commits',
+                    action='store_false',
+                    help='in chunks for larger uploads')
 parser.add_argument('--write_token', type=str)
-
 '''
 If fails, just rerun. See https://huggingface.co/docs/huggingface_hub/guides/upload#upload-a-folder-by-chunks
 '''
@@ -29,5 +33,5 @@ if __name__ == "__main__":
         multi_commits=args.no_multi_commits,
         multi_commits_verbose=True,
         token=args.write_token,
-        create_pr=True, # creates a PR. You must manually merge the PR in
+        create_pr=True,  # creates a PR. You must manually merge the PR in
     )

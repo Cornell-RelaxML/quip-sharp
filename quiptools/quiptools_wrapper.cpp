@@ -53,10 +53,29 @@ void decompress_hi4b1c_packed(
     torch::Tensor &Y        // m x n
 );
 
+void decompress_hi3b1c_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,       // 16 x 1
+    torch::Tensor &Y        // m x n
+);
+
+void decompress_hi2b1c_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,       // 16 x 1
+    torch::Tensor &Y        // m x n
+);
+
 void decompress_e81b_packed(
     torch::Tensor YIs,      // m x (n/8)
     torch::Tensor CB,       // 256 x 8
     torch::Tensor &Y        // m x n
+);
+
+void lookupmatmul_e81b_k8(
+    torch::Tensor X,        // k x n
+    torch::Tensor YIs,      // m x (n/4)
+    torch::Tensor CB,       // 256 x 4
+    torch::Tensor Z         // k x m
 );
 
 
@@ -69,6 +88,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("decompress_packed_e8p", &decompress_packed_e8p, "decompress_packed_e8p");
   m.def("decode_matvec_e8p", &decode_matvec_e8p, "decode_matvec_e8p");
   m.def("decompress_hi4b1c_packed", &decompress_hi4b1c_packed, "decompress_hi4b1c_packed");
+  m.def("decompress_hi3b1c_packed", &decompress_hi3b1c_packed, "decompress_hi3b1c_packed");
+  m.def("decompress_hi2b1c_packed", &decompress_hi2b1c_packed, "decompress_hi2b1c_packed");
   m.def("decompress_e81b_packed", &decompress_e81b_packed, "decompress_e81b_packed");
+  m.def("lookupmatmul_e81b_k8", &lookupmatmul_e81b_k8, "lookupmatmul_e81b_k8");
 }
 

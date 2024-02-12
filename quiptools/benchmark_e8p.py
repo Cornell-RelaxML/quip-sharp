@@ -1,5 +1,5 @@
-import torch
 import quiptools_cuda
+import torch
 
 
 def benchmark():
@@ -9,8 +9,12 @@ def benchmark():
     K = 4096
 
     x = torch.randn((M, K), dtype=torch.float32, device="cuda")
-    Qidxs = torch.randint(1<<15, (N, K//8), dtype=torch.int16, device="cuda")
-    codebook = torch.randint(0x7FFFFFFFFFFFFFFF, (256,), dtype=torch.int64, device="cuda")
+    Qidxs = torch.randint(1 << 15, (N, K // 8),
+                          dtype=torch.int16,
+                          device="cuda")
+    codebook = torch.randint(0x7FFFFFFFFFFFFFFF, (256, ),
+                             dtype=torch.int64,
+                             device="cuda")
 
     # start_event = torch.cuda.Event(enable_timing=True)
     # end_event = torch.cuda.Event(enable_timing=True)

@@ -1,15 +1,16 @@
-import os
-import math
-import json
 import argparse
-import torch
+import json
+import math
+import os
+import random
+
 import datasets
+import glog
+import torch
+from tqdm import tqdm
+
 from lib.utils import gptq_data_utils
 from lib.utils.unsafe_import import model_from_hf_path
-import random
-import glog
-
-from tqdm import tqdm
 
 torch.set_grad_enabled(False)
 
@@ -22,10 +23,11 @@ parser.add_argument('--no_use_flash_attn', action='store_true')
 
 
 def main(args):
-    datasets = ['wikitext2', 'c4', 'c4_new']
-    model, model_str = model_from_hf_path(args.hf_path,
-                                          use_cuda_graph=not args.no_use_cuda_graph,
-                                          use_flash_attn=not args.no_use_flash_attn)
+    datasets = ['wikitext2', 'c4']
+    model, model_str = model_from_hf_path(
+        args.hf_path,
+        use_cuda_graph=not args.no_use_cuda_graph,
+        use_flash_attn=not args.no_use_flash_attn)
 
     for dataset in datasets:
         input_tok = gptq_data_utils.get_test_tokens(dataset,
@@ -33,7 +35,8 @@ def main(args):
                                                     seqlen=args.seqlen,
                                                     model=model_str)
         nsamples = input_tok.numel() // args.seqlen
-        input_tok = input_tok[0, :(args.seqlen * nsamples)].view(nsamples, args.seqlen)
+        input_tok = input_tok[0, :(args.seqlen * nsamples)].view(
+            nsamples, args.seqlen)
 
         if not args.no_use_cuda_graph:
             model.reset()
@@ -49,7 +52,8 @@ def main(args):
                            output_attentions=False)[0]
             shift_logits = output[:, :-1, :].contiguous()
             shift_labels = input[:, 1:]
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)),
+                            shift_labels.view(-1))
             acc_loss += loss.item()
             progress.set_description(f"avg_loss = {acc_loss/(ii+1)}")
 

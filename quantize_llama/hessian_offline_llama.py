@@ -1,20 +1,21 @@
-import os
-import datetime
-import random
 import argparse
+import datetime
+import os
+import random
 from copy import deepcopy
+
 from tqdm import tqdm
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 import numpy
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, PreTrainedTokenizerFast
-from datasets import load_dataset
-
 import torch.multiprocessing as mp
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          PreTrainedTokenizerFast)
+from transformers.modeling_attn_mask_utils import \
+    _prepare_4d_causal_attention_mask
 
-# import data_utils
 from lib import utils
 
 parser = argparse.ArgumentParser()
@@ -22,7 +23,9 @@ parser.add_argument('--seed', default=0, type=int)
 parser.add_argument('--batch_size', default=2, type=int)
 parser.add_argument('--devset_size', default=256, type=int)
 parser.add_argument('--ctx_size', default=4096, type=int)
-parser.add_argument('--base_model', default='meta-llama/Llama-2-70b-hf', type=str)
+parser.add_argument('--base_model',
+                    default='meta-llama/Llama-2-70b-hf',
+                    type=str)
 parser.add_argument('--save_path', default='hessians/llama2_70b', type=str)
 parser.add_argument('--scratch_path', default=None, type=str)
 parser.add_argument('--chunk_size', default=256, type=int)
@@ -47,7 +50,8 @@ def move_fn(in_q, async_copy_speed):
         print(f'moved {src} to {tgt}')
 
 
-def forward_layer(layer, position_ids, attention_mask, bs, device, in_q, out_q):
+def forward_layer(layer, position_ids, attention_mask, bs, device, in_q,
+                  out_q):
     torch.set_grad_enabled(False)
     layer = layer.to(device)
     position_ids = position_ids.to(device)
@@ -63,16 +67,22 @@ def forward_layer(layer, position_ids, attention_mask, bs, device, in_q, out_q):
             layer = layer.cpu()
             position_ids = position_ids.cpu()
             attention_mask = attention_mask.cpu()
-            out_q.put({'qkv': done_qkv(), 'o': done_o(), 'up': done_up(), 'down': done_down()})
+            out_q.put({
+                'qkv': done_qkv(),
+                'o': done_o(),
+                'up': done_up(),
+                'down': done_down()
+            })
             return
 
         assert len(dev_emb) % bs == 0
         for i in range(len(dev_emb) // bs):
-            dev_emb[i * bs:(i + 1) * bs] = layer(dev_emb[i * bs:(i + 1) * bs].to(device),
-                                                 position_ids=position_ids,
-                                                 attention_mask=attention_mask,
-                                                 use_cache=False,
-                                                 output_attentions=False)[0].cpu()
+            dev_emb[i * bs:(i + 1) * bs] = layer(
+                dev_emb[i * bs:(i + 1) * bs].to(device),
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+                output_attentions=False)[0].cpu()
 
 
 def accumulate(in_q, move_q, ngpus, args, transformer_layer_index):
@@ -84,8 +94,10 @@ def accumulate(in_q, move_q, ngpus, args, transformer_layer_index):
         out = in_q.get()
         if i == 0:
             for key in out:
-                Hs[key] = torch.zeros(out[key][0].shape, dtype=out[key][0].dtype)
-                mus[key] = torch.zeros(out[key][1].shape, dtype=out[key][1].dtype)
+                Hs[key] = torch.zeros(out[key][0].shape,
+                                      dtype=out[key][0].dtype)
+                mus[key] = torch.zeros(out[key][1].shape,
+                                       dtype=out[key][1].dtype)
                 cts[key] = 0
         for key in out:
             Hs[key].add_(out[key][0])
@@ -107,8 +119,9 @@ def accumulate(in_q, move_q, ngpus, args, transformer_layer_index):
                 'ct': cts[key]
             }, save_path)
         if args.scratch_path is not None:
-            move_q.put((f"{args.scratch_path}/{transformer_layer_index}_{key}.pt",
-                        f"{args.save_path}/{transformer_layer_index}_{key}.pt"))
+            move_q.put(
+                (f"{args.scratch_path}/{transformer_layer_index}_{key}.pt",
+                 f"{args.save_path}/{transformer_layer_index}_{key}.pt"))
 
     del Hs, mus, cts, out
 
@@ -124,18 +137,19 @@ def main(args):
 
     if os.path.isfile(f"{args.save_path}/dev_activations.pt"):
         print("loading cached dataset...")
-        loaded_dev_activations = torch.load(f"{args.save_path}/dev_activations.pt")
+        loaded_dev_activations = torch.load(
+            f"{args.save_path}/dev_activations.pt")
         after_layer = loaded_dev_activations['after_layer']
         dev_emb = loaded_dev_activations['dev_emb']
-        print(f"loaded cached dataset from {loaded_dev_activations['timestamp']}")
+        print(
+            f"loaded cached dataset from {loaded_dev_activations['timestamp']}"
+        )
     else:
         print("loading dataset...")
-        dataset = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train")
-        devset = utils.sample_devset(dataset,
-                                     tokenizer,
-                                     args.devset_size,
-                                     args.ctx_size,
-                                     nproc=args.sample_proc)
+        devset = utils.sample_rp1t(tokenizer,
+                                   args.devset_size,
+                                   args.ctx_size,
+                                   nproc=args.sample_proc)
         dev_emb = model.model.embed_tokens(devset)
         after_layer = -1
         print("loaded dataset!")
@@ -146,21 +160,20 @@ def main(args):
     position_ids = torch.arange(args.ctx_size, dtype=torch.int64)[None, :] + \
         torch.zeros(args.batch_size, args.ctx_size, dtype=torch.int64)
     if hasattr(model.config, 'sliding_window'):
-        # mistral models
-        attention_mask = model.model._prepare_decoder_attention_mask(
-            torch.ones(args.batch_size, args.ctx_size,
-                       dtype=torch.bool), (args.batch_size, args.ctx_size),
-            dev_emb[0:args.batch_size, :, :],
+        attention_mask = _prepare_4d_causal_attention_mask(
+            None, (args.batch_size, args.ctx_size),
+            quant_emb[0:args.batch_size],
             0,
-            sliding_window=model.config.sliding_window)
+            sliding_window=model.config.sliding_window).to(device)
     else:
-        attention_mask = model.model._prepare_decoder_attention_mask(
-            torch.ones(args.batch_size, args.ctx_size, dtype=torch.bool),
-            (args.batch_size, args.ctx_size), dev_emb[0:args.batch_size, :, :], 0)
+        attention_mask = _prepare_4d_causal_attention_mask(
+            None, (args.batch_size, args.ctx_size),
+            quant_emb[0:args.batch_size], 0).to(device)
 
     if args.scratch_path is not None:
         move_q = mp.Queue()
-        move_p = mp.Process(target=move_fn, args=(move_q, args.async_copy_speed))
+        move_p = mp.Process(target=move_fn,
+                            args=(move_q, args.async_copy_speed))
         move_p.start()
     else:
         move_q = None
@@ -174,8 +187,10 @@ def main(args):
 
         transformer_layer = model.model.layers[transformer_layer_index]
         # check that there are four layers, as expected
-        assert (len([m for m in transformer_layer.modules()
-                     if isinstance(m, torch.nn.Linear)]) == 7)
+        assert (len([
+            m for m in transformer_layer.modules()
+            if isinstance(m, torch.nn.Linear)
+        ]) == 7)
 
         chunk_size = min(args.chunk_size, len(dev_emb))
         ngpus = min(torch.cuda.device_count(), len(dev_emb) // chunk_size)
@@ -185,18 +200,22 @@ def main(args):
         out_q = manager.Queue()
 
         accumulate_proc = mp.Process(target=accumulate,
-                                     args=(out_q, move_q, ngpus, args, transformer_layer_index))
+                                     args=(out_q, move_q, ngpus, args,
+                                           transformer_layer_index))
         accumulate_proc.start()
 
         forward_procs = []
         for i in range(ngpus):
             p = mp.Process(target=forward_layer,
-                           args=(transformer_layer, position_ids, attention_mask, args.batch_size,
-                                 i, in_q, out_q))
+                           args=(transformer_layer, position_ids,
+                                 attention_mask, args.batch_size, i, in_q,
+                                 out_q))
             p.start()
             forward_procs.append(p)
 
-        assert len(dev_emb) % args.batch_size == 0 and chunk_size % args.batch_size == 0
+        assert len(
+            dev_emb
+        ) % args.batch_size == 0 and chunk_size % args.batch_size == 0
         i = 0
         while i < len(dev_emb):
             next = min(i + chunk_size, len(dev_emb))

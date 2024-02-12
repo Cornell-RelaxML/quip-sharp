@@ -1,14 +1,20 @@
-import transformers
-import torch
-from lm_eval.base import BaseLM
 import fnmatch
+
+import torch
+import transformers
+from lm_eval.base import BaseLM
 
 # adapted from https://github.com/mit-han-lab/llm-awq/tree/main
 
 
 class LMEvalAdaptor(BaseLM):
 
-    def __init__(self, model_name, model, tokenizer, batch_size=1, max_length=-1):
+    def __init__(self,
+                 model_name,
+                 model,
+                 tokenizer,
+                 batch_size=1,
+                 max_length=-1):
         super().__init__()
 
         assert isinstance(batch_size, int)
@@ -88,34 +94,34 @@ class LMEvalAdaptor(BaseLM):
         logits returned from the model
         """
         with torch.no_grad():
-            if isinstance(self.model, transformers.models.t5.modeling_t5.T5ForConditionalGeneration):
+            if isinstance(
+                    self.model, transformers.models.t5.modeling_t5.
+                    T5ForConditionalGeneration):
                 dec_inps = torch.cat(
                     [
                         torch.tensor(
-                            self.model.generation_config.decoder_start_token_id,
-                        )
-                        .tile(len(inps), 1)
-                        .to(inps),
+                            self.model.
+                            generation_config.decoder_start_token_id, ).tile(
+                                len(inps), 1).to(inps),
                         inps,
                     ],
                     dim=1,
                 )
-             
-                kwargs = {"decoder_input_ids": dec_inps,}
+
+                kwargs = {
+                    "decoder_input_ids": dec_inps,
+                }
             else:
                 kwargs = {}
             out = self.model(inps, **kwargs)[0]
-            return out 
+            return out
             # if "opt" in self.model_name:  # there are a few extra tokens in opt, which we should omit
             #     return out[:, :, :50257]
             # else:
             #     return out  # [:, :, :self.tokenizer.vocab_size]
 
     def _model_generate(self, context, max_length, eos_token_id):
-        return self.model.generate(
-            context,
-            max_length=max_length,
-            eos_token_id=eos_token_id,
-            do_sample=False
-        )
-
+        return self.model.generate(context,
+                                   max_length=max_length,
+                                   eos_token_id=eos_token_id,
+                                   do_sample=False)

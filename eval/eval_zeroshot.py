@@ -1,15 +1,16 @@
-import os
-import json
 import argparse
-import torch
-import datasets
-from transformers import AutoTokenizer
+import json
+import os
 import random
+
+import datasets
 import glog
+import torch
+from lm_eval import evaluator, tasks
+from transformers import AutoTokenizer
 
 from lib.utils import LMEvalAdaptor
 from lib.utils.unsafe_import import model_from_hf_path
-from lm_eval import evaluator, tasks
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', default=0, type=int)
@@ -23,9 +24,10 @@ parser.add_argument('--no_use_flash_attn', action='store_true')
 
 
 def main(args):
-    model, model_str = model_from_hf_path(args.hf_path,
-                                          use_cuda_graph=False,
-                                          use_flash_attn=not args.no_use_flash_attn)
+    model, model_str = model_from_hf_path(
+        args.hf_path,
+        use_cuda_graph=False,
+        use_flash_attn=not args.no_use_flash_attn)
     tokenizer = AutoTokenizer.from_pretrained(model_str)
 
     glog.info('loaded model!')

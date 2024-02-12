@@ -1,27 +1,28 @@
-# QuIP#: [QuIP](https://github.com/jerry-chee/QuIP) with Lattice Codebooks
-This repository contains the official code for **QuIP#**, a weights-only quantization method that is able to achieve near fp16 performance using only 2 bits per weight.
-QuIP# combines lattice codebooks with incoherence processing to create state-of-the-art quantized models.
-We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# as well as other Llama-architecture models (e.g. Mistral).
-We also provide a full codebase that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
+# QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks [[arXiv]](https://arxiv.org/abs/2402.04396)
+This repository contains the official code for **QuIP#**, a weight-only post-training quantization method that achieves state-of-the-art performance in extreme compression ($\le 4$ bits per weight) regimes.
+QuIP# improves the incoherence processing of [QuIP](https://openreview.net/pdf?id=xrk9g5vcXR) by using the randomized Hadamrd transform (RHT). 
+QuIP# also introduces lattice codebooks based on the $E_8$ lattice and a fine-tuning scheme to further improve quantization quality.
+With QuIP#, 3 bit models scale better than theoretically lossless 4 bit models, a previously unseen result.
 
-| Method    | Precision | Wiki $\downarrow$ | C4 $\downarrow$  | ArcE $\uparrow$  | PiQA $\uparrow$  |
+We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# [here](https://huggingface.co/relaxml).
+This codebase contains code that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
+**Please open a GitHub ticket if you have any questions about the code or QuIP# in general.**
+
+<img src="docs/img/quip.PNG" width="500">
+
+| Method    | Precision | Wiki $\downarrow$ | C4 (`c4_new`) $\downarrow$  | ArcE $\uparrow$  | PiQA $\uparrow$  |
 |:---------:|:---------:|:---------:|:---------:|:---------:|:---------:|
 | Native    | 16 bit    |   3.120   |   5.533   |   0.597   |   0.809   |
-| OPTQ      | 3 bit     |   4.577   |   6.838   |   0.544   | **0.786** |
+| OPTQ      | 3 bit     |   4.577   |   6.838   |   0.544   | 0.786 |
 | OPTQ      | 2 bit     |  109.820  |   62.692  |   0.253   |   0.505   |
 | QuIP      | 2 bit     |   5.574   |   8.268   |   0.544   |   0.751   |
-| **QuIP#** | **2 bit** | **4.159** | **6.529** | **0.595** | **0.786** |
+| **QuIP#** | **2 bit** | **3.907** | **6.248** | **0.591** | **0.794** |
 
-Quantization results on Llama 2 70B. QuIP# achieves near-native performance at 2 bits, outperforming all other presented baselines.
-Results for other models available [here](https://docs.google.com/spreadsheets/d/18woLrIBdVGUr9CuFDbK9pl_6QzEBl09hfnoe4Qkg7Hg/edit?usp=sharing). **We are currently updating the spreadsheet with new results so it is currently not visible. It will become visible again in a few days. We appreciate your patience.**
+## Latest Updates
 
-## ☞ Read more about QuIP# and how it works [here](https://cornell-relaxml.github.io/quip-sharp/)!
-
-## News
-
-- We've released new 3 and 4 bit models that use residual vector quantization (RVQ) to get the benefits of the $E_8$ lattice at higher bitrates. Learn more about these models in the blog post above and check out the models in our model zoo!
-- We merged in a faster E8P kernel that (with CUDA graphs) is around twice as fast as before. Make sure to pull the latest code and models and recompile `quiptools` to get the faster kernel. As a reminder, `hf.generate()` does not work with CUDA graphs so the generation speed in `interactive_gen.py` is not representative of reality.
-- We fixed a duplicated entry in the E8P codebook and updated the result tables.
+- We released a preprint of QuIP# [here](https://arxiv.org/abs/2402.04396). The old blog post has not been updated so do not refer to that.
+- The latest version of this codebase has been significantly revamped and cleaned up. It should be significantly easier to quantize new models. Make sure to pull from the repo to get the latest improvements to QuIP#. Better documentation will come soon.
+- QuIP# now includes a fine-tuning algorithm that further improves quantization quality. The Llama models on the HF repo have been updated with new models quantized with fine-tuning. These models are fully compatible with the old code. The Openhermes and Mistral models have not been requantized with fine-tuning; we will update those in the near future.
 
 ## Installation
 
@@ -31,53 +32,47 @@ Results for other models available [here](https://docs.google.com/spreadsheets/d
 
 ## Quantization
 
-- To quantize a Llama architecture (q/k/v/o/up/gate/down) model: `python quantize_llama.py --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags.
-    - `--save_path <output path>`.
-    - `--base_model <Hugging Face (HF) model card or local path>`. 
-    For Llama 1, we provide weights at `relaxml/Llama-1-<7,13,30,65>b-hf`. For other models, use model cards from HF.
-    - `--hessian_path <path to precomputed Hessians>`. 
-    We provide precomputed Hessians at repo_id's `relaxml/Hessians*-<n>`. These Hessians were computed with `n` samples and the context length and attention mask used to train the original model. To download them, run `python scripts/download_hf.py --folder_path <local path to save Hessians> --repo_id <repo_id> --read_token <huggingface read token>`.
-    - `--codebook <codebook argument>`. 
-    We recommend using the 2 bit E8P codebook with `E8P12`. This codebook gives the best quantization at 2 bits. Other options are the 2 bit `D4` codebook and the 4 bit Half Integer grid `HI4B1C`. See our blog post for details on the codebooks.
-    - `--scale_override <quantization scale parameter>`. 
-    We suggest the following scale parameters for each codebook: `{E8P12: 0.9, D4: 1.1, HI4B1C: 2.7}`, however you may want to play around with scales if quantizing your own models. 
-- To convert a quantized model to the HF format: `CUDA_VISIBLE_DEVICES=0 python hfize_llama.py --quantized_path <output path of quantize_llama.py> --hf_output_path <path to save HF version>`
-- To generate your own Hessians for a Llama architecture model: `python hessian_offline_llama --<FLAGS>`. The primary flags are as follows. See the arg list for the remaining flags. **Hessian calculation uses a `fp64` accumulator for numerical accuracy. Running this script on a device with slow `fp64` capabilities will take longer.**
+Example quantization scripts for the Llama family of models are located in `quantize_llama`. Follow these scripts to use QuIP# on other architectures. Within `quantize_llama`:
+- `hessian_offline_llama.py` contains code to generate model Hessians. **Hessian calculation uses a `fp64` accumulator for numerical accuracy. Running this script on a device with slow `fp64` capabilities will take longer.** The HF repo includes pregenerated Hessians for a variety of models.
     - `--batch_size` Batch size per GPU. Tune so you don't run out of memory.
     - `--devset_size` Size of devset to use for Hessian generation.
     - `--ctx_size` Context size (sequence length) to use for Hessian generation.
-    - `--base_model` Same as in `quantize_llama.py`.
+    - `--base_model` Full precision HF model.
+- `quantize_finetune_llama.py` contains code to quantize llama with fine-tuning ("fine-tuning during quantization" in the paper).
+    - To reproduce earlier QuIP# results without fine-tuning, pass `--ft_epochs 0`
+    - `--save_path` Output path.
+    - `--base_model` Full precision HF model. For Llama 1, we provide weights at `relaxml/Llama-1-<7,13,30,65>b-hf`.
+    - `--hessian_path` Offline Hessians. We provide precomputed Hessians at repo_id's `relaxml/Hessians*-<n>`. These Hessians were computed with `n` samples and the context length and attention mask used to train the original model. To download them, run `python scripts/download_hf.py --folder_path <local path to save Hessians> --repo_id <repo_id> --read_token <huggingface read token>`.
+    - `--codebook` Codebook. Use `E8P12` for 2 bits, `E8P12RVQ3B` for 3 bits, and `E8P12RVQ4B` for 4 bits.
+    - `--scale_override` and `--resid_scale_override`. Post-incoherence processing scale overrides. We suggest using 0.9 for `E8P12` and the default scales for 3 and 4 bit models. You may want to manually tune these for your specific model.
+    - `--ft*` Various fine tuning arguments. `--ft_grad_ckpt` turns on gradient checkpointing and `--ft_train_mode` manifests the full quantized matrix during fine-tuning. We recommend turning `--ft_train_mode` on if you have enough memory since it makes training go faster.
+- `finetune_e2e_llama.py` tunes the sign vectors (SU/SV), layernorms, and language model head of a given model (the second fine-tuning step in the paper). The arguments are similar to `quantize_finetune_llama.py`. You will need to convert the output of that script to a Hf model with `hfize_llama.py` before running this script. The HF-ized model should be passed in through `--hf_path`.
+- `hfize_llama.py` converts a quantized model to the HF format. 
 
 ### I want to quantize a non-Llama architecture model, what do I do?
 
-Currently, `hessian_offline_llama.py`, `quantize_llama.py`, and `hfize_llama.py` are written for the Llama architecture. However, the only "special" things they do are identify the relevant `nn.Linear` layers that need to be quantized (q/k/v/o/up/gate/down), inject Hessian hooks, and quantize them. 
-If you want to quantize a non-Llama architecture model, you will need to find the relevant `nn.Linear` files and make your own hessian_offline/quantize/hfize files. This should be pretty straightforward and feel free to open a GitHub ticket if you run into any issues.
-You will also need copy `modeling_<architecture>.py` from the HF source into the `models/` folder and replace the relevant `nn.Linear` layers with `QuantizedLinear` layers (see how `models/llama.py` does it).
-Our current `quantize_llama.py` implementation fuses the q/k/v layers and the up/gate layers for increased speed since they share the same Hessians. However, this is not a requirement and you can also quantize those layers individually.
-
+The scripts in `quantize_llama` are written with the Llama architecture in mind.
+However, QuIP# is adaptable to any architecture with linear layers. 
+To use QuIP# on a new architecture, identify the relevant linear layers and update the scripts in `quantize_llama`.
+Feel free to open a GitHub issue if you run into issues.
     
 ## Evaluation
 
-See our blog post for a full set of results.
-- Perplexity on Wikitext2 and C4: `CUDA_VISIBLE_DEVICES=0 python eval_ppl.py --hf_path <HF version path>`
-- Zero shot tasks: `CUDA_VISIBLE_DEVICES=0 python eval_zeroshot.py --tasks arc_challenge,arc_easy,boolq,piqa,winogrande --batch_size <batch size> --hf_path <HF version path>`
-- Timing test for forward pass of one token: `CUDA_VISIBLE_DEVICES=0 python gen_speed.py --hf_path <HF version path> --batch_size <batch_size>`.
-
-*The `CUDA_VISIBLE_DEVICES` environmental variable is only needed if you get CUDA errors from running on more GPUs than needed to fit the model. This is an artifact of HF accelerate.*
+`eval` contains evaluation scripts. These scripts may need `CUDA_VISIBLE_DEVICES=0` if you run into CUDA errors due to how HF accelerate works. 
+- `eval_ppl.py` calculates perplexity on Wikitext2 and C4.
+- `eval_zeroshot.py` calculates performance on zeroshot tasks.
+- `eval_speed.py` times the forward pass for one token.
 
 ## Text Generation
 
-To use our models as part of an interactive generation script, run `CUDA_VISIBLE_DEVICES=0 python interactive_gen.py --hf_path <HF version path> --max_length <max generation length>`.
-`interactive_gen.py` is very rudimentary and you may want to write your own.
-All it does is call HF's `.generate()` function.
+`eval/interactive_gen.py` contains a very simple interactive generation script. 
+This script is very rudimentary and you may want to write your own - all it does is call HF's `.generate()` function.
+**HF generate does not currently work with CUDA graphs. Thus, this script will be very slow since most of the time is spent on kernel launches. We expect better support for CUDA graphs with HF in transformers 4.38, which should come out in less than a month.**
 
 ## Model Zoo
 We provide quantized models available on HF.
 To use them, pass the given HF repo_id to `--hf_path`.
-See our blog post for details on the codebooks.
-The 3 bit models are currently significantly slower than the 2 and 4 bit models to generate text with since we have not written a matvec CUDA kernel for them yet.
-Currently, the 3 bit models do a full decompress then multiply for each linear layer instead of decompression during multiplication like the 2 and 4 bit models do.
-We are aiming to merge in a 3 bit matvec kernel in soon.
+The 3 bit models are currently significantly slower than the 2 and 4 bit models during generation since we have not written an optimized matvec CUDA kernel for them yet.
 
 | Lattice Codebook | Base Model  | Weight Bits | HF repo_id |
 |:----------------:|:-----------|:-----------:|:----------------|
@@ -91,8 +86,8 @@ We are aiming to merge in a 3 bit matvec kernel in soon.
 |                  | Llama 1 30b | 2           | [`relaxml/Llama-1-30b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8P-2Bit) |
 |                  | Llama 1 13b | 2           | [`relaxml/Llama-1-13b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8P-2Bit) |
 |                  | Llama 1 7b  | 2           | [`relaxml/Llama-1-7b-E8P-2Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8P-2Bit)   |
-|		   | Mistral 7b  | 2	       | [`relaxml/Mistral-7b-E8P-2Bit`](https://huggingface.co/relaxml/Mistral-7b-E8P-2Bit)   |
-|		   | OpenHermes 2.5 | 2	       | [`relaxml/Openhermes-7b-E8P-2Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8P-2Bit)   |
+|		   | Mistral 7b (non fine-tuned) | 2	       | [`relaxml/Mistral-7b-E8P-2Bit`](https://huggingface.co/relaxml/Mistral-7b-E8P-2Bit)   |
+|		   | OpenHermes 2.5 (non fine-tuned) | 2	       | [`relaxml/Openhermes-7b-E8P-2Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8P-2Bit)   |
 | E8P RVQ 3 Bit    | Llama 2 70b | 3           | [`relaxml/Llama-2-70b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8PRVQ-3Bit) |
 |                  | Llama 2 70b chat| 3       | [`relaxml/Llama-2-70b-chat-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8PRVQ-3Bit) |
 |                  | Llama 2 13b | 3           | [`relaxml/Llama-2-13b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8PRVQ-3Bit) |
@@ -103,8 +98,8 @@ We are aiming to merge in a 3 bit matvec kernel in soon.
 |                  | Llama 1 30b | 3           | [`relaxml/Llama-1-30b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8PRVQ-3Bit) |
 |                  | Llama 1 13b | 3           | [`relaxml/Llama-1-13b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8PRVQ-3Bit) |
 |                  | Llama 1 7b  | 3           | [`relaxml/Llama-1-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8PRVQ-3Bit)   |
-|		   | Mistral 7b  | 3	       | [`relaxml/Mistral-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-3Bit)   |
-|		   | OpenHermes 2.5 | 3	       | [`relaxml/Openhermes-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-3Bit)   |
+|		   | Mistral 7b (non fine-tuned) | 3	       | [`relaxml/Mistral-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-3Bit)   |
+|		   | OpenHermes 2.5 (non fine-tuned) | 3	       | [`relaxml/Openhermes-7b-E8PRVQ-3Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-3Bit)   |
 | E8P RVQ 4 Bit    | Llama 2 70b | 4           | [`relaxml/Llama-2-70b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-E8PRVQ-4Bit) |
 |                  | Llama 2 70b chat| 4       | [`relaxml/Llama-2-70b-chat-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-70b-chat-E8PRVQ-4Bit) |
 |                  | Llama 2 13b | 4           | [`relaxml/Llama-2-13b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-2-13b-E8PRVQ-4Bit) |
@@ -115,8 +110,8 @@ We are aiming to merge in a 3 bit matvec kernel in soon.
 |                  | Llama 1 30b | 4           | [`relaxml/Llama-1-30b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-30b-E8PRVQ-4Bit) |
 |                  | Llama 1 13b | 4           | [`relaxml/Llama-1-13b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-13b-E8PRVQ-4Bit) |
 |                  | Llama 1 7b  | 4           | [`relaxml/Llama-1-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Llama-1-7b-E8PRVQ-4Bit)   |
-|		   | Mistral 7b  | 4	       | [`relaxml/Mistral-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-4Bit)   |
-|		   | OpenHermes 2.5 | 4	       | [`relaxml/Openhermes-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-4Bit)   |
+|		   | Mistral 7b (non fine-tuned) | 4	       | [`relaxml/Mistral-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Mistral-7b-E8PRVQ-4Bit)   |
+|		   | OpenHermes 2.5 (non fine-tuned) | 4	       | [`relaxml/Openhermes-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-4Bit)   |
 
 
 ## CUDA Graphs
@@ -130,3 +125,15 @@ Most of our evaluation scripts use the graph wrapper by default unless the `--no
 Use of Llama models is governed by the Meta license available [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 Use of Mistral models is governed by the Apache 2.0 license.
 Use of this code is governed by the GNU GPL v3 license.
+
+If you found this work useful, please consider citing
+```
+@misc{tseng2024quip,
+      title={QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks}, 
+      author={Albert Tseng and Jerry Chee and Qingyao Sun and Volodymyr Kuleshov and Christopher De Sa},
+      year={2024},
+      eprint={2402.04396},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+```

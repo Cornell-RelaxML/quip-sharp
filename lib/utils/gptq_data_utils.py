@@ -5,16 +5,18 @@ From https://github.com/IST-DASLab/gptq/blob/main/datautils.py
 import numpy as np
 import torch
 
+
 def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
+
 
 def get_wikitext2(nsamples, seed, seqlen, model):
     from datasets import load_dataset
     traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
     testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
 
-    from transformers import AutoTokenizer 
+    from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
     trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
@@ -31,14 +33,18 @@ def get_wikitext2(nsamples, seed, seqlen, model):
         trainloader.append((inp, tar))
     return trainloader, testenc
 
+
 def get_ptb(nsamples, seed, seqlen, model):
     from datasets import load_dataset
     traindata = load_dataset('ptb_text_only', 'penn_treebank', split='train')
-    valdata = load_dataset('ptb_text_only', 'penn_treebank', split='validation')
+    valdata = load_dataset('ptb_text_only',
+                           'penn_treebank',
+                           split='validation')
 
-    from transformers import AutoTokenizer 
+    from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
-    trainenc = tokenizer("\n\n".join(traindata['sentence']), return_tensors='pt')
+    trainenc = tokenizer("\n\n".join(traindata['sentence']),
+                         return_tensors='pt')
     testenc = tokenizer("\n\n".join(valdata['sentence']), return_tensors='pt')
 
     import random
@@ -53,14 +59,17 @@ def get_ptb(nsamples, seed, seqlen, model):
         trainloader.append((inp, tar))
     return trainloader, testenc
 
+
 def get_c4(nsamples, seed, seqlen, model):
     from datasets import load_dataset
     traindata = load_dataset(
-        'allenai/c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train'
-    )
+        'allenai/c4',
+        data_files={'train': 'en/c4-train.00000-of-01024.json.gz'},
+        split='train')
     valdata = load_dataset(
-        'allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation'
-    )
+        'allenai/c4',
+        data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'},
+        split='validation')
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
 
@@ -93,12 +102,16 @@ def get_c4(nsamples, seed, seqlen, model):
         j = i + seqlen
         valenc.append(tmp.input_ids[:, i:j])
     valenc = torch.hstack(valenc)
+
     class TokenizerWrapper:
+
         def __init__(self, input_ids):
             self.input_ids = input_ids
+
     valenc = TokenizerWrapper(valenc)
 
-    return trainloader, valenc 
+    return trainloader, valenc
+
 
 def get_ptb_new(nsamples, seed, seqlen, model):
     from datasets import load_dataset
@@ -122,14 +135,17 @@ def get_ptb_new(nsamples, seed, seqlen, model):
         trainloader.append((inp, tar))
     return trainloader, testenc
 
+
 def get_c4_new(nsamples, seed, seqlen, model):
     from datasets import load_dataset
     traindata = load_dataset(
-        'allenai/c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train'
-    )
+        'allenai/c4',
+        data_files={'train': 'en/c4-train.00000-of-01024.json.gz'},
+        split='train')
     valdata = load_dataset(
-        'allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation'
-    )
+        'allenai/c4',
+        data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'},
+        split='validation')
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
@@ -154,16 +170,16 @@ def get_c4_new(nsamples, seed, seqlen, model):
     valenc = valenc.input_ids[:, :(256 * seqlen)]
 
     class TokenizerWrapper:
+
         def __init__(self, input_ids):
             self.input_ids = input_ids
+
     valenc = TokenizerWrapper(valenc)
 
     return trainloader, valenc
 
 
-def get_loaders(
-    name, nsamples=128, seed=0, seqlen=2048, model=''
-):
+def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
     if 'wikitext2' in name:
         return get_wikitext2(nsamples, seed, seqlen, model)
     if 'ptb' in name:
@@ -176,13 +192,11 @@ def get_loaders(
         return get_c4(nsamples, seed, seqlen, model)
 
 
-
-def get_test_tokens(
-    name, seed=0, seqlen=2048, model=''
-):
+def get_test_tokens(name, seed=0, seqlen=2048, model=''):
     train_samples = 0
     if name == 'wikitext2':
-        return get_wikitext2(train_samples, seed, seqlen, model)[1]['input_ids']
+        return get_wikitext2(train_samples, seed, seqlen,
+                             model)[1]['input_ids']
     elif name == 'c4':
         return get_c4(train_samples, seed, seqlen, model)[1].input_ids
     elif name == 'c4_new':

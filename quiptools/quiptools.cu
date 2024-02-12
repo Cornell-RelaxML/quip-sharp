@@ -428,6 +428,111 @@ void decompress_hi4b1c_packed(
 }
 
 
+// This is a terrible kernel, only use this to not call the pytorch version
+
+#define DECOMPRESS_HI3B1C_BLOCK_SIZE 128
+
+__global__ void cuda_decompress_hi3b1c_packed_kernel(
+    const int32_t* __restrict__ YIs,     // m x (n/8)
+    const c10::Half* __restrict__ CB,     // 16 x 1
+    c10::Half* __restrict__ Y             // m x n
+) {
+  const long i = threadIdx.x + DECOMPRESS_HI3B1C_BLOCK_SIZE * blockIdx.x;
+
+  // 0 2 4 6 1 3 5 7
+  uint32_t packed = YIs[i];
+  Y[i*8 + 7] = CB[packed & 15];
+  Y[i*8 + 5] = CB[(packed >> 4) & 15];
+  Y[i*8 + 3] = CB[(packed >> 8) & 15];
+  Y[i*8 + 1] = CB[(packed >> 12) & 15];
+  Y[i*8 + 6] = CB[(packed >> 16) & 15];
+  Y[i*8 + 4] = CB[(packed >> 20) & 15];
+  Y[i*8 + 2] = CB[(packed >> 24) & 15];
+  Y[i*8 + 0] = CB[(packed >> 28) & 15];
+}
+
+
+void decompress_hi3b1c_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,
+    torch::Tensor &Y         // m x n
+) {
+  size_t m = Y.sizes()[0];
+  size_t n = Y.sizes()[1];
+
+  assert(YIs.is_contiguous());
+  assert(Y.is_contiguous());
+
+  assert(YIs.sizes()[0] == m);
+  assert(YIs.sizes()[1] * 8 == n);
+
+  assert(CB.sizes()[0] == 8);
+  assert(CB.sizes()[1] == 1);
+
+  
+  const dim3 threads(DECOMPRESS_HI3B1C_BLOCK_SIZE);
+  const dim3 blocks(m*n/(8*DECOMPRESS_HI3B1C_BLOCK_SIZE));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cuda_decompress_hi3b1c_packed_kernel<<<blocks, threads, 0, stream>>>(
+    YIs.data_ptr<int32_t>(),
+    CB.data_ptr<c10::Half>(),
+    Y.data_ptr<c10::Half>()
+  );
+}
+
+// This is a terrible kernel, only use this to not call the pytorch version
+
+#define DECOMPRESS_HI2B1C_BLOCK_SIZE 128
+
+__global__ void cuda_decompress_hi2b1c_packed_kernel(
+    const int32_t* __restrict__ YIs,     // m x (n/8)
+    const c10::Half* __restrict__ CB,     // 16 x 1
+    c10::Half* __restrict__ Y             // m x n
+) {
+  const long i = threadIdx.x + DECOMPRESS_HI2B1C_BLOCK_SIZE * blockIdx.x;
+
+  // 0 2 4 6 1 3 5 7
+  uint32_t packed = YIs[i];
+  Y[i*8 + 7] = CB[packed & 15];
+  Y[i*8 + 5] = CB[(packed >> 4) & 15];
+  Y[i*8 + 3] = CB[(packed >> 8) & 15];
+  Y[i*8 + 1] = CB[(packed >> 12) & 15];
+  Y[i*8 + 6] = CB[(packed >> 16) & 15];
+  Y[i*8 + 4] = CB[(packed >> 20) & 15];
+  Y[i*8 + 2] = CB[(packed >> 24) & 15];
+  Y[i*8 + 0] = CB[(packed >> 28) & 15];
+}
+
+
+void decompress_hi2b1c_packed(
+    torch::Tensor YIs,      // m x (n/8)
+    torch::Tensor CB,
+    torch::Tensor &Y         // m x n
+) {
+  size_t m = Y.sizes()[0];
+  size_t n = Y.sizes()[1];
+
+  assert(YIs.is_contiguous());
+  assert(Y.is_contiguous());
+
+  assert(YIs.sizes()[0] == m);
+  assert(YIs.sizes()[1] * 8 == n);
+
+  assert(CB.sizes()[0] == 4);
+  assert(CB.sizes()[1] == 1);
+
+  
+  const dim3 threads(DECOMPRESS_HI2B1C_BLOCK_SIZE);
+  const dim3 blocks(m*n/(8*DECOMPRESS_HI2B1C_BLOCK_SIZE));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cuda_decompress_hi2b1c_packed_kernel<<<blocks, threads, 0, stream>>>(
+    YIs.data_ptr<int32_t>(),
+    CB.data_ptr<c10::Half>(),
+    Y.data_ptr<c10::Half>()
+  );
+}
+
+
 
 // This is a terrible kernel, only use this to not call the pytorch version
 
@@ -469,7 +574,7 @@ void decompress_e81b_packed(
   assert(CB.sizes()[0] == 256);
   assert(CB.sizes()[1] == 8);
 
-  
+  at::DeviceGuard guard(CB.device());
   const dim3 threads(DECOMPRESS_E81B_BLOCK_SIZE);
   const dim3 blocks(m*n/(64*DECOMPRESS_E81B_BLOCK_SIZE));
   cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
@@ -555,7 +660,8 @@ void lookupmatmul_e81b_k8(
   assert(k <= 8);
   assert(m % 32 == 0);
   assert(n % 32 == 0);
-
+  
+  at::DeviceGuard guard(CB.device());
   const dim3 threads(32);
   const dim3 blocks(m/32, k/8);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();

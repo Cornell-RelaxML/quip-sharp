@@ -1,10 +1,13 @@
+import time
+
+import quiptools_cuda
 import torch
 import torch.nn as nn
-import quiptools_cuda
-from lib.utils import dtype_from_str, get_hadK
+
 from lib import codebook
+from lib.utils import dtype_from_str, get_hadK
+
 from .quantized_linear import QuantizedLinear
-import time
 
 
 class FusedQuantizedLinear(QuantizedLinear):
@@ -18,5 +21,7 @@ class FusedQuantizedLinear(QuantizedLinear):
 
     def forward(self, input):
         fused_output = super(FusedQuantizedLinear, self).forward(input)
-        split_outputs = torch.split(fused_output, self.fuse_sizes, self.fuse_dim)
-        return tuple(split_outputs[i] * self.fuse_scales[i] for i in range(self.n))
+        split_outputs = torch.split(fused_output, self.fuse_sizes,
+                                    self.fuse_dim)
+        return tuple(split_outputs[i] * self.fuse_scales[i]
+                     for i in range(self.n))

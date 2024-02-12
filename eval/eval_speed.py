@@ -1,11 +1,13 @@
 import argparse
 import os
+import time
+
 import glog
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler import ProfilerActivity, profile, record_function
 from transformers import AutoTokenizer
+
 from lib.utils.unsafe_import import model_from_hf_path
-import time
 
 torch.set_grad_enabled(False)
 
@@ -19,14 +21,17 @@ parser.add_argument('--no_use_flash_attn', action='store_true')
 
 
 def main(args):
-    model, model_str = model_from_hf_path(args.hf_path,
-                                          use_cuda_graph=not args.no_use_cuda_graph,
-                                          use_flash_attn=not args.no_use_flash_attn)
+    model, model_str = model_from_hf_path(
+        args.hf_path,
+        use_cuda_graph=not args.no_use_cuda_graph,
+        use_flash_attn=not args.no_use_flash_attn)
     tokenizer = AutoTokenizer.from_pretrained(model_str)
 
     prompt = 'It is a truth universally acknowledged that'
     inputs = tokenizer(prompt, return_tensors='pt')
-    token = inputs['input_ids'][0:1, 0:1].cuda().repeat(args.batch_size, args.seqlen)
+    token = inputs['input_ids'][0:1,
+                                0:1].cuda().repeat(args.batch_size,
+                                                   args.seqlen)
     model(token, use_cache=False)
 
     torch.cuda.synchronize()
