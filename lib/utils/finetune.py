@@ -53,8 +53,10 @@ def calculate_ce_loss(layer, position_ids, attention_mask, dataloader):
     ct = 0
     with torch.no_grad():
         for source, target in dataloader:
-            output = layer(source, position_ids,
-                           attention_mask.float())[:, :-1].contiguous()
+            output = layer(
+                source,
+                position_ids=position_ids,
+                attention_mask=attention_mask.float())[:, :-1].contiguous()
             total_loss += nn.CrossEntropyLoss()(
                 output.view(-1, output.shape[-1]),
                 target.to(0).view(-1, target.shape[-1]),

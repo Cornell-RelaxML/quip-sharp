@@ -5,8 +5,9 @@ import os
 
 import transformers
 
-from model.graph_wrapper import get_graph_wrapper
 from model.llama import LlamaForCausalLM
+
+from . import graph_wrapper
 
 
 def model_from_hf_path(path,
@@ -15,8 +16,8 @@ def model_from_hf_path(path,
                        device_map='auto'):
 
     def maybe_wrap(use_cuda_graph):
-        return (lambda x: get_graph_wrapper(x)) if use_cuda_graph else (
-            lambda x: x)
+        return (lambda x: graph_wrapper.get_graph_wrapper(x)
+                ) if use_cuda_graph else (lambda x: x)
 
     # AutoConfig fails to read name_or_path correctly
     bad_config = transformers.AutoConfig.from_pretrained(path)

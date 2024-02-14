@@ -51,27 +51,40 @@ def get_llama_save_fn(args):
     def save_fn(shard_model):
         ct = 0
         for i in range(len(shard_model.shards)):
-            for j in range(len(shard_model.shards[i])):
-                utils.save_susv(shard_model.shards[i][j].self_attn.qkv_proj,
+            for j in range(len(shard_model.shards[i].layers)):
+                shard = shard_model.shards[i].layers[j]
+                utils.save_susv(shard.self_attn.qkv_proj,
                                 f'{args.ckpt_path}/{ct}_qkv.pt')
-                utils.save_susv(shard_model.shards[i][j].self_attn.o_proj,
+                utils.save_susv(shard.self_attn.o_proj,
                                 f'{args.ckpt_path}/{ct}_o.pt')
-                utils.save_susv(shard_model.shards[i][j].mlp.upgate_proj,
+                utils.save_susv(shard.mlp.upgate_proj,
                                 f'{args.ckpt_path}/{ct}_up.pt')
-                utils.save_susv(shard_model.shards[i][j].mlp.down_proj,
+                utils.save_susv(shard.mlp.down_proj,
                                 f'{args.ckpt_path}/{ct}_down.pt')
                 torch.save(
                     {
                         'input_layernorm':
-                        shard_model.shards[i][j].input_layernorm.weight,
+                        shard.input_layernorm.weight,
                         'post_attention_layernorm':
-                        shard_model.shards[i]
-                        [j].post_attention_layernorm.weight,
+                        shard.post_attention_layernorm.weight,
                     }, f'{args.ckpt_path}/{ct}_layernorm.pt')
                 glog.info(f'wrote layer {ct}')
                 ct += 1
+        torch.save(
+            {
+                'lm_head': shard_model.output_layer[1].weight,
+                'norm': shard_model.output_layer[0].weight,
+            }, f'{args.ckpt_path}/lmhead.pt')
 
     return save_fn
+
+
+def llama_arg_fn(output, args, kwargs):
+    return (output[0], *args[1:]), kwargs
+
+
+def get_emb(args, kwargs):
+    return args[0]
 
 
 def main(args):
@@ -101,13 +114,26 @@ def main(args):
     attention_mask = _prepare_4d_causal_attention_mask(
         None, (args.ft_bs, args.ctx_size), emb[:args.ft_bs], 0)
 
+    # construct shards
     nshards = torch.cuda.device_count(
     ) if args.ft_nshards < 0 else args.ft_nshards
-    shard_model = utils.ShardModel(quant_model,
-                                   nshards,
-                                   grad_ckpt=args.ft_grad_ckpt,
-                                   train_mode=args.ft_train_mode)
-    shard_model.manifest(emb[:args.ft_bs], position_ids, attention_mask)
+    nlayers = len(quant_model.model.layers)
+    shards = [nn.ModuleList([]) for _ in range(nshards)]
+    for i in range(nshards):
+        for j in range(int(nlayers * i / nshards),
+                       int(nlayers * (i + 1) / nshards)):
+            shards[i].append(quant_model.model.layers[j])
+        shards[i] = {'device': i, 'arg_fn': llama_arg_fn, 'shard': shards[i]}
+    output_layer = {
+        'layer': nn.Sequential(quant_model.model.norm, quant_model.lm_head),
+        'fn': get_emb
+    }
+
+    shard_model = utils.ShardTransformer(shards, output_layer,
+                                         args.ft_grad_ckpt, args.ft_train_mode)
+    shard_model.manifest(emb[:args.ft_bs],
+                         position_ids=position_ids,
+                         attention_mask=attention_mask)
     utils.clean()
 
     torch.set_grad_enabled(True)

@@ -54,8 +54,7 @@ if is_flash_attn_2_available():
 
 from lib.linear.fused_quantized_linear import FusedQuantizedLinear
 from lib.linear.quantized_linear import QuantizedLinear
-
-from .version import check_model_version
+from lib.utils import check_model_version
 
 logger = logging.get_logger(__name__)
 
