@@ -170,8 +170,8 @@ def finetune_susv_e2e(model, orig_logits, emb, position_ids, attention_mask,
                                 enabled=True):
                 output = model(
                     source,
-                    position_ids,
-                    attention_mask,
+                    position_ids=position_ids,
+                    attention_mask=attention_mask,
                 )[:, :-1].contiguous()
                 loss = nn.CrossEntropyLoss()(output.view(-1, output.shape[-1]),
                                              targets.to(0).view(
@@ -203,11 +203,4 @@ def finetune_susv_e2e(model, orig_logits, emb, position_ids, attention_mask,
 
     with torch.no_grad():
         model.load_state_dict(best_sd)
-
-        torch.save(
-            {
-                'lm_head': model.lm_head.weight,
-                'norm': model.norm.weight,
-            }, f'{args.ckpt_path}/lmhead.pt')
-
         save_fn(model)
