@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 from lib import codebook, utils
 from lib.utils.unsafe_import import model_from_hf_path
 from model.llama import LlamaForCausalLM
-from model.version import MODEL_VERSION
+from lib.utils.model_version import MODEL_VERSION
 
 torch.set_grad_enabled(False)
 

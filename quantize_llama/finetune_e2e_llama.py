@@ -64,16 +64,16 @@ def get_llama_save_fn(args):
                 torch.save(
                     {
                         'input_layernorm':
-                        shard.input_layernorm.weight,
+                        shard.input_layernorm.weight.to(torch.float16),
                         'post_attention_layernorm':
-                        shard.post_attention_layernorm.weight,
+                        shard.post_attention_layernorm.weight.to(torch.float16),
                     }, f'{args.ckpt_path}/{ct}_layernorm.pt')
                 glog.info(f'wrote layer {ct}')
                 ct += 1
         torch.save(
             {
-                'lm_head': shard_model.output_layer[1].weight,
-                'norm': shard_model.output_layer[0].weight,
+                'lm_head': shard_model.output_layer[1].weight.to(torch.float16),
+                'norm': shard_model.output_layer[0].weight.to(torch.float16),
             }, f'{args.ckpt_path}/lmhead.pt')
 
     return save_fn
