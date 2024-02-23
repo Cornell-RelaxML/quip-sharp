@@ -162,13 +162,13 @@ def main(args):
     if hasattr(model.config, 'sliding_window'):
         attention_mask = _prepare_4d_causal_attention_mask(
             None, (args.batch_size, args.ctx_size),
-            quant_emb[0:args.batch_size],
+            dev_emb[0:args.batch_size],
             0,
-            sliding_window=model.config.sliding_window).to(device)
+            sliding_window=model.config.sliding_window)
     else:
         attention_mask = _prepare_4d_causal_attention_mask(
             None, (args.batch_size, args.ctx_size),
-            quant_emb[0:args.batch_size], 0).to(device)
+            dev_emb[0:args.batch_size], 0)
 
     if args.scratch_path is not None:
         move_q = mp.Queue()
