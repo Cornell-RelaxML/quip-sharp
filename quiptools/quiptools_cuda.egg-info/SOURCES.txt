@@ -1,8 +1,0 @@
-quiptools.cu
-quiptools_e8p_gemv.cu
-quiptools_wrapper.cpp
-setup.py
-quiptools_cuda.egg-info/PKG-INFO
-quiptools_cuda.egg-info/SOURCES.txt
-quiptools_cuda.egg-info/dependency_links.txt
-quiptools_cuda.egg-info/top_level.txt

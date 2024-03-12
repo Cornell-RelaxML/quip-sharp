@@ -28,7 +28,6 @@ This codebase contains code that allows users to quantize and deploy their own m
 
 - Clone the repo
 - Install the requirements via `pip install -r requirements.txt`. You may want to use the official pytorch commands to get the CUDA versions.
-- Build and install the matmul CUDA kernels. (`cd quiptools && python setup.py install && cd ../`)
 
 ## Quantization
 

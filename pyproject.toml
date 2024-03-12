@@ -1,0 +1,40 @@
+[build-system]
+requires = [
+    "setuptools >= 61.0",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quip_sharp"
+version = "1.0.0"
+authors = [
+  { name="Albert Tseng", email="albert@cs.cornell.edu" },
+  { name="Jerry Chee", email="JerryChee@cs.cornell.edu" },
+  { name="Qingyao Sun", email="qs234@cornell.edu" },
+  { name="Volodymyr Kuleshov", email="kuleshov@cornell.edu" },
+  { name="Christopher De Sa", email="cdesa@cs.cornell.edu" },
+]
+description = "QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "datasets",
+    "fast-hadamard-transform",
+    "flash-attn",
+    "glog",
+    "lm-eval",
+    "numpy",
+    "primefac",
+    "quiptools-cuda",
+    "torch >= 2",
+    "tqdm",
+    "transformers >= 4.36.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Cornell-RelaxML/quip-sharp"
+Issues = "https://github.com/Cornell-RelaxML/quip-sharp/issues"
