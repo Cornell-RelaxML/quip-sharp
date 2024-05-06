@@ -139,6 +139,7 @@ def main(args):
     # save configs
     all_config = {'quant_args': args, 'model_config': model.config}
     quip_params = {
+        'quant_method': 'quip-sharp',
         'lora_rank': args.lora_rank,
         'rescale_WH': args.rescale_WH,
         'codebook': args.codebook,
@@ -148,7 +149,7 @@ def main(args):
         'packsz': cb.packsz,
         'resid_scale_override': args.resid_scale_override,
     }
-    all_config['model_config'].update({'quip_params': quip_params})
+    all_config['model_config'].update({'quantization_config': quip_params})
     torch.save(all_config, os.path.join(args.save_path, 'config.pt'))
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)

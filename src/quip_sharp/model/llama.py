@@ -116,7 +116,7 @@ class LlamaRMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, **kwargs):
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -158,14 +158,15 @@ class LlamaRotaryEmbedding(nn.Module):
         freqs = torch.outer(t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached",
-                             emb.cos().to(dtype),
-                             persistent=False)
-        self.register_buffer("sin_cached",
-                             emb.sin().to(dtype),
-                             persistent=False)
+        if not hasattr(self, "cos_cached") and not hasattr(self, "sin_cached"):
+            self.register_buffer("cos_cached",
+                                 emb.cos().to(dtype),
+                                 persistent=False)
+            self.register_buffer("sin_cached",
+                                 emb.sin().to(dtype),
+                                 persistent=False)
 
-    def forward(self, x, seq_len=None):
+    def forward(self, x, seq_len=None, **kwargs):
         # x: [bs, num_attention_heads, seq_len, head_size]
         if seq_len > self.max_seq_len_cached:
             self._set_cos_sin_cache(seq_len=seq_len,
@@ -287,6 +288,7 @@ class LlamaMLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        self.config.quip_params = self.config.quantization_config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
         self.upgate_proj = FusedQuantizedLinear(
@@ -325,7 +327,7 @@ class LlamaMLP(nn.Module):
         # self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x):
+    def forward(self, x, **kwargs):
         if self.config.pretraining_tp > 1:
             raise Exception
         # removed for quantization
@@ -374,6 +376,7 @@ class LlamaAttention(nn.Module):
     def __init__(self, config: LlamaConfig, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
+        self.config.quip_params = self.config.quantization_config
         self.layer_idx = layer_idx
         if layer_idx is None:
             logger.warning_once(
@@ -848,6 +851,7 @@ class LlamaSdpaAttention(LlamaAttention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor],
                Optional[Tuple[torch.Tensor]]]:
         if output_attentions:
@@ -1175,6 +1179,7 @@ class LlamaModel(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states
@@ -1354,6 +1359,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1548,6 +1554,7 @@ class LlamaForSequenceClassification(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        **kwargs,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):

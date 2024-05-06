@@ -188,6 +188,7 @@ class MistralMLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        self.config.quip_params = self.config.quantization_config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
         self.upgate_proj = FusedQuantizedLinear(
@@ -258,6 +259,7 @@ class MistralAttention(nn.Module):
     def __init__(self, config: MistralConfig, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
+        self.config.quip_params = self.config.quantization_config
         self.layer_idx = layer_idx
         if layer_idx is None:
             logger.warning_once(

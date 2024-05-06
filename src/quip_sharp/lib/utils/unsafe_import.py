@@ -21,7 +21,7 @@ def model_from_hf_path(path,
 
     # AutoConfig fails to read name_or_path correctly
     bad_config = transformers.AutoConfig.from_pretrained(path)
-    is_quantized = hasattr(bad_config, 'quip_params')
+    is_quantized = hasattr(bad_config, 'quantization_config')
     model_type = bad_config.model_type
     if is_quantized:
         if model_type == 'llama':
