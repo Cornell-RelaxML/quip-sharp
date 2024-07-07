@@ -20,13 +20,15 @@ th {
 }
 </style>
 
-## This blog post is outdated. Refer to the arXiv instead: [https://arxiv.org/abs/2402.04396](https://arxiv.org/abs/2402.04396).
+## This blog post is outdated. Refer to the arXiv instead: .
 
 ## QuIP#: [QuIP](https://github.com/jerry-chee/QuIP) with Lattice Codebooks
 
 [Albert Tseng*](https://tsengalb99.github.io), [Jerry Chee*](https://jerry-chee.github.io/), [Qingyao Sun](https://nalzok.github.io/), [Volodymyr Kuleshov](https://www.cs.cornell.edu/~kuleshov/), and [Chris De Sa](https://www.cs.cornell.edu/~cdesa/)
 
 ---
+
+https://anaconda.org/nvidia/cuda-cudart
 
 ![](img/overview.svg)
 

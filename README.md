@@ -8,7 +8,7 @@ We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# [h
 This codebase contains code that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
 **Please open a GitHub ticket if you have any questions about the code or QuIP# in general.**
 
-<img src="docs/img/quip.PNG" width="500">
+<img src="assets/quip.PNG" width="500">
 
 | Method    | Precision | Wiki $\downarrow$ | C4 (`c4_new`) $\downarrow$  | ArcE $\uparrow$  | PiQA $\uparrow$  |
 |:---------:|:---------:|:---------:|:---------:|:---------:|:---------:|
