@@ -13,6 +13,7 @@ This codebase contains code that allows users to quantize and deploy their own m
 ## Latest Updates
 
 - QuIP# will appear at ICML 2024 in Vienna, Austria. Feel free to visit us if you're around!
+- Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), enables ultra high-dimensional quantization with fast inference through a specially designed trellis quantizer. When used as a replacement for E8P in QuIP#, QTIP achieves state-of-the-art results amongst methods that support fast inference. We plan on releasing a joint QuIP#/QTIP PyPI package in the future.
 
 ## Installation
 
