@@ -20,6 +20,7 @@ This codebase contains code that allows users to quantize and deploy their own m
 - Clone the repo
 - Install the requirements via `pip install -r requirements.txt`.
 - Build and install the CUDA inference kernels. (`cd quiptools && python setup.py install && cd ../`)
+- Install the [fast-hadamard-transform](https://github.com/Dao-AILab/fast-hadamard-transform) package. This package is also available through pip but recently I've had issues installing it through pip.
 
 ## Quantization
 
