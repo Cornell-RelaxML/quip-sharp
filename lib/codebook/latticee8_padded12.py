@@ -225,6 +225,28 @@ class E8P12_codebook(nn.Module):
         return W_decompressed
 
 
+torch.library.define("quip_lib::decode_matvec_e8p", "(Tensor x, Tensor Qidxs, Tensor grid_packed_abs, int m, int n) -> Tensor")
+
+@torch.library.impl_abstract("quip_lib::decode_matvec_e8p")
+def decode_matvec_e8p_abstract(
+        x: torch.Tensor,
+        Qidxs: torch.Tensor,
+        grid_packed_abs: torch.Tensor,
+        m: int, n: int) -> torch.Tensor:
+    return x.new_empty(*x.shape[:-1], m, dtype=torch.float32, device=x.device)
+
+@torch.library.impl("quip_lib::decode_matvec_e8p", "cuda")
+def decode_matvec_e8p_cuda(
+        x: torch.Tensor,
+        Qidxs: torch.Tensor,
+        grid_packed_abs: torch.Tensor,
+        m: int, n: int) -> torch.Tensor:
+    return quiptools_cuda.decode_matvec_e8p(
+        x[0].to(torch.float16),
+        Qidxs.view(m // 16, n // 64, 8, 4),
+        grid_packed_abs).to(torch.float32)
+
+    
 class QuantizedE8P12Linear(nn.Module):
 
     def __init__(self, device):
@@ -248,6 +270,7 @@ class QuantizedE8P12Linear(nn.Module):
             K_right,
         ).to(torch.float16)
 
+    @torch.compile(dynamic=True, mode='reduce-overhead')
     def forward(self,
                 input,
                 Qidxs_list,
@@ -280,10 +303,15 @@ class QuantizedE8P12Linear(nn.Module):
                 ABx = Bx @ A.t().to(torch.float32)
 
             if x.size(0) == 1:
+
+                #x = torch.ops.quip_lib.decode_matvec_e8p(
+                #    x, Qidxs_list[0], self.codebook.grid_packed_abs, m, n)
+
                 x = quiptools_cuda.decode_matvec_e8p(
                     x[0].to(torch.float16),
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
                     self.codebook.grid_packed_abs).to(torch.float32)
+
             else:
                 W_decompressed = quiptools_cuda.decompress_packed_e8p(
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
@@ -299,3 +327,6 @@ class QuantizedE8P12Linear(nn.Module):
 
         output = x.view(*input.shape[:-1], m)
         return output
+
+
+    

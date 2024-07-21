@@ -32,6 +32,7 @@ def model_from_hf_path(path,
             raise Exception
     else:
         model_cls = transformers.AutoModelForCausalLM
+        model_str = path
 
     model = maybe_wrap(use_cuda_graph)(model_cls).from_pretrained(
         path,
