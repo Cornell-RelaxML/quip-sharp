@@ -1,8 +1,8 @@
 # [QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks](https://arxiv.org/abs/2402.04396), ICML 2024
 This repository contains the official code for **QuIP#**, a weight-only post-training quantization method that achieves state-of-the-art performance in extreme compression ($\le 4$ bits per weight) regimes.
 QuIP# improves the incoherence processing of [QuIP](https://openreview.net/pdf?id=xrk9g5vcXR) by using the randomized Hadamard transform (RHT). 
-QuIP# also introduces lattice codebooks based on the $E_8$ lattice and a fine-tuning scheme to further improve quantization quality.
-With QuIP#, 3 bit models scale better than theoretically lossless 4 bit models, a previously unseen result.
+QuIP# also introduces fast vector quantization codebooks based on the $E_8$ lattice and a fine-tuning scheme to further improve quantization quality.
+**QuIP# is the first PTQ method where 3 bit models scale better than theoretically lossless 4 bit models**
 
 We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# [here](https://huggingface.co/relaxml).
 This codebase contains code that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
@@ -10,8 +10,16 @@ This codebase contains code that allows users to quantize and deploy their own m
 
 <img src="assets/quip.PNG" width="500">
 
+Inference throughput with HF's Llama and CUDA graphs on a RTX 4090:
+|    Method   |    2-7B    | 2-70B |
+|:-----------:|:----------:|:-----:|
+|     FP16    | 33.1 tok/s |  OOM  |
+|  AQLM 2 Bit |    20.6    |  8.27 |
+| QuIP# 2 Bit |    106.3   |  25.9 |
+
 ## Latest Updates
 
+- **[This PR](https://github.com/Cornell-RelaxML/quip-sharp/pull/65) enables fast inference on HF with CUDA graphs! This change removes kernel launch time overhead and lets QuIP# models generate text at over 100 tokens/s.** 
 - QuIP# will appear at ICML 2024 in Vienna, Austria. Feel free to visit us if you're around!
 - Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), enables ultra high-dimensional quantization with fast inference through a specially designed trellis quantizer. When used as a replacement for E8P in QuIP#, QTIP achieves state-of-the-art results amongst methods that support fast inference. We plan on releasing a joint QuIP#/QTIP PyPI package in the future.
 
@@ -55,23 +63,16 @@ Feel free to open a GitHub issue if you run into issues.
 - `eval_zeroshot.py` calculates performance on zeroshot tasks.
 - `eval_speed.py` times the forward pass for one token.
 
-## Fast Inference
-Inference throughput with HF's Llama and CUDA graphs on a RTX 4090:
-|    Method   |    2-7B    | 2-70B |
-|:-----------:|:----------:|:-----:|
-|     FP16    | 33.1 tok/s |  OOM  |
-|  AQLM 2 Bit |    20.6    |  8.27 |
-| QuIP# 2 Bit |    106.3   |  25.9 |
-
+## Fast Inference and Text Generation
 QuIP# was designed to support fast inference. Example inference kernels for recent NVIDIA GPUs can be found in the `quiptools` folder.
 We are currently missing a 1 bit matrix-vector multiply kernel needed to make 3 bit inference fast, so if you'd like to contribute feel free to open a pull request.
-
-## Text Generation
 
 `eval/interactive_gen.py` contains a very simple interactive generation script. 
 This script is very rudimentary and you may want to write your own - all it does is call HF's `.generate()` function.
 **HF generate does not currently work out-of-the-box with CUDA graphs. Thus, this script will be very slow since most of the time is spent on kernel launches.**
 QuIP# should work with any codebase and people have reported success integrating it with vLLM, so we may switch away from HF in the future -- the purpose of this codebase is to provide a reference implementation for QuIP#.
+
+**[Update] https://github.com/Cornell-RelaxML/quip-sharp/pull/65 adds CUDA graph support to HF, so this codebase will support fast inference soon!**
 
 ## Model Zoo
 Example quantized models (mostly Llama 1 and 2) can be found on our [HF repo](https://huggingface.co/relaxml). 
@@ -119,13 +120,13 @@ Feel free to open a pull request with a link to your own quantized QuIP# model i
 |		   | OpenHermes 2.5 (non fine-tuned) | 4	       | [`relaxml/Openhermes-7b-E8PRVQ-4Bit`](https://huggingface.co/relaxml/Openhermes-7b-E8PRVQ-4Bit)   |
 
 
-## CUDA Graphs
-
-We provide a wrapper class that integrates our models with CUDA graphs in `model/graph_wrapper.py`.
-Currently, the torch CUDA graph implementation does not work with HF's `.generate()` function, but model calls with static input and output sizes can utilize the CUDA graph wrapper for better performance.
-Most of our evaluation scripts use the graph wrapper by default unless the `--no_use_cuda_graph` flag is passed in.
-
 ## Other
+
+### Third Party Implementations
+
+https://github.com/chu-tianxiang/QuIP-for-all contains a third party implementation of QuIP#. We have not verified the correctness of the repo, but it seems to work properly and has out of the box integration with other frameworks (vLLM, gpt-fast, etc).
+
+### Licensing
 
 Use of Llama models is governed by the Meta license available [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 Use of Mistral models is governed by the Apache 2.0 license.
