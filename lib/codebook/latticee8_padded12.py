@@ -233,7 +233,7 @@ def decode_matvec_e8p_abstract(
         Qidxs: torch.Tensor,
         grid_packed_abs: torch.Tensor,
         m: int, n: int) -> torch.Tensor:
-    return x.new_empty(*x.shape[:-1], m, dtype=torch.float32, device=x.device)
+    return x.new_empty(m, dtype=torch.float32, device=x.device)
 
 @torch.library.impl("quip_lib::decode_matvec_e8p", "cuda")
 def decode_matvec_e8p_cuda(
@@ -241,10 +241,8 @@ def decode_matvec_e8p_cuda(
         Qidxs: torch.Tensor,
         grid_packed_abs: torch.Tensor,
         m: int, n: int) -> torch.Tensor:
-    return quiptools_cuda.decode_matvec_e8p(
-        x[0].to(torch.float16),
-        Qidxs.view(m // 16, n // 64, 8, 4),
-        grid_packed_abs).to(torch.float32)
+    return quiptools_cuda.decode_matvec_e8p(x, Qidxs, grid_packed_abs)
+
 
     
 class QuantizedE8P12Linear(nn.Module):
@@ -270,7 +268,6 @@ class QuantizedE8P12Linear(nn.Module):
             K_right,
         ).to(torch.float16)
 
-    @torch.compile(dynamic=True, mode='reduce-overhead')
     def forward(self,
                 input,
                 Qidxs_list,
@@ -299,19 +296,22 @@ class QuantizedE8P12Linear(nn.Module):
             x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
 
             if rank > 0:
+
                 Bx = x @ B.t().to(torch.float32)
                 ABx = Bx @ A.t().to(torch.float32)
 
             if x.size(0) == 1:
-
-                #x = torch.ops.quip_lib.decode_matvec_e8p(
-                #    x, Qidxs_list[0], self.codebook.grid_packed_abs, m, n)
-
+                x = torch.ops.quip_lib.decode_matvec_e8p(
+                    x[0].to(torch.float16),
+                    Qidxs_list[0].view(m // 16, n // 64, 8, 4),
+                    self.codebook.grid_packed_abs,
+                    m, n).to(torch.float32)
+                '''
                 x = quiptools_cuda.decode_matvec_e8p(
                     x[0].to(torch.float16),
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
                     self.codebook.grid_packed_abs).to(torch.float32)
-
+                '''
             else:
                 W_decompressed = quiptools_cuda.decompress_packed_e8p(
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),

@@ -1,4 +1,4 @@
-import fast_hadamard_transform_cuda
+import fast_hadamard_transform
 import torch
 
 from lib import utils
@@ -93,9 +93,9 @@ torch.library.define("quip_lib::hadamard", "(Tensor x, float scale) -> Tensor")
 def hadamard_abstract(x: torch.Tensor, scale: float) -> torch.Tensor:
     return x
 
-@torch.library.impl("quip_lib::hadamard", "cuda")
-def hadamard_cuda(x: torch.Tensor, scale: float) -> torch.Tensor:
-    return fast_hadamard_transform_cuda.fast_hadamard_transform(x, scale)
+@torch.library.impl("quip_lib::hadamard", "default")
+def hadamard(x: torch.Tensor, scale: float) -> torch.Tensor:
+    return fast_hadamard_transform.hadamard_transform(x, scale)
 
 
 def matmul_hadU_cuda(X, hadK, K, transpose=False):

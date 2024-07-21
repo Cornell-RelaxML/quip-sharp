@@ -8,8 +8,8 @@ setup(
             'quiptools_cuda',
             ['quiptools_wrapper.cpp', 'quiptools.cu', 'quiptools_e8p_gemv.cu'],
             extra_compile_args={
-                'cxx': ['-g', '-lineinfo'],
-                'nvcc': ['-O2', '-g', '-Xcompiler', '-rdynamic', '-lineinfo']
+                'cxx': ['-g', '-lineinfo', '-std=c++20'],
+                'nvcc': ['-O2', '-g', '-Xcompiler', '-rdynamic', '-lineinfo', '-std=c++20']
             })
     ],
     cmdclass={'build_ext': cpp_extension.BuildExtension})

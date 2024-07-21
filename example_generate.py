@@ -68,6 +68,10 @@ def main(model_path, compile, interactive, num_samples, max_tokens, top_k):
         use_cuda_graph=False,
         use_flash_attn=False,
         device_map='cuda:0')
+    print(model)
+    print(torch.__version__)
+    import transformers
+    print(transformers.__version__)
     tokenizer = AutoTokenizer.from_pretrained(model_str)
     tokenizer.pad_token = tokenizer.eos_token
     model._setup_cache(StaticCache, 1, max_cache_len=2048)
