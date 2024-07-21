@@ -63,7 +63,7 @@ def generate(model, tokenizer, text, max_new_tokens, top_k, callback):
 def main(model_path, compile, interactive, num_samples, max_tokens, top_k):
     device = "cuda"
     model, model_str = model_from_hf_path(
-        'relaxml/Llama-2-7b-E8P-2Bit',
+        'relaxml/Llama-2-70b-E8P-2Bit',
         #'meta-llama/Llama-2-7b-hf',
         use_cuda_graph=False,
         use_flash_attn=False,
