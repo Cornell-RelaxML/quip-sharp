@@ -244,6 +244,23 @@ def decode_matvec_e8p_cuda(
     return quiptools_cuda.decode_matvec_e8p(x, Qidxs, grid_packed_abs)
 
 
+torch.library.define("quip_lib::decompress_packed_e8p", "(Tensor Qidxs, Tensor grid_packed_abs, int m, int n) -> Tensor")
+
+@torch.library.impl_abstract("quip_lib::decompress_packed_e8p")
+def decompress_packed_e8p_abstract(
+        Qidxs: torch.Tensor,
+        grid_packed_abs: torch.Tensor,
+        m: int, n: int) -> torch.Tensor:
+    return Qidxs.new_empty(m, n, dtype=torch.float16, device=Qidxs.device)
+
+@torch.library.impl("quip_lib::decompress_packed_e8p", "cuda")
+def decompress_packed_e8p_cuda(
+        Qidxs: torch.Tensor,
+        grid_packed_abs: torch.Tensor,
+        m: int, n: int) -> torch.Tensor:
+    return quiptools_cuda.decompress_packed_e8p(Qidxs, grid_packed_abs)
+
+
     
 class QuantizedE8P12Linear(nn.Module):
 
@@ -273,7 +290,7 @@ class QuantizedE8P12Linear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                had_left,
+                had_left_T,
                 had_right,
                 K_left,
                 K_right,
@@ -293,33 +310,20 @@ class QuantizedE8P12Linear(nn.Module):
         if train_mode:
             x = (x.to(torch.float16) @ self.W).float()
         else:
-            x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
-
-            if rank > 0:
-
-                Bx = x @ B.t().to(torch.float32)
-                ABx = Bx @ A.t().to(torch.float32)
-
+            x = matmul_hadU_cuda(x, had_left_T, K_left) / self.scale
+                
             if x.size(0) == 1:
                 x = torch.ops.quip_lib.decode_matvec_e8p(
                     x[0].to(torch.float16),
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
                     self.codebook.grid_packed_abs,
                     m, n).to(torch.float32)
-                '''
-                x = quiptools_cuda.decode_matvec_e8p(
-                    x[0].to(torch.float16),
-                    Qidxs_list[0].view(m // 16, n // 64, 8, 4),
-                    self.codebook.grid_packed_abs).to(torch.float32)
-                '''
             else:
-                W_decompressed = quiptools_cuda.decompress_packed_e8p(
+                W_decompressed = torch.ops.quip_lib.decompress_packed_e8p(
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
-                    self.codebook.grid_packed_abs)
+                    self.codebook.grid_packed_abs,
+                    m, n)
                 x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
-
-            if rank > 0:
-                x = x + ABx.to(torch.float32)
 
             x = matmul_hadU_cuda(x, had_right, K_right)
 

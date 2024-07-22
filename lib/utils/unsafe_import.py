@@ -38,7 +38,7 @@ def model_from_hf_path(path,
         path,
         torch_dtype='auto',
         low_cpu_mem_usage=True,
-        use_flash_attention_2=use_flash_attn,
+        attn_implementation='sdpa',
         device_map=device_map).half()
 
     return model, model_str
