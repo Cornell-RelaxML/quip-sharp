@@ -259,6 +259,7 @@ class E8P12RVQ4B_codebook(nn.Module):
         return W_decompressed
 
 
+    
 class QuantizedE8P12RVQ4BLinear(nn.Module):
 
     def __init__(self, device):
@@ -303,7 +304,7 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                had_left,
+                had_left_T,
                 had_right,
                 K_left,
                 K_right,
@@ -325,16 +326,13 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
         if train_mode:
             x = (x.to(torch.float16) @ self.W).float()
         else:
-            x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
-
-            if rank > 0:
-                Bx = x @ B.t().to(torch.float32)
-                ABx = Bx @ A.t().to(torch.float32)
+            x = matmul_hadU_cuda(x, had_left_T, K_left) / self.scale
 
             resid_scale = resid_scale_override if resid_scale_override > 0 else \
                 self.codebook.opt_resid_scale
             if x.size(0) == 1:
                 x16 = x[0].to(torch.float16)
+                '''
                 x = (quiptools_cuda.decode_matvec_e8p(
                     x16, Qidxs_list[0].view(m // 16, n // 64, 8, 4),
                     self.codebook.grid_packed_abs) +
@@ -342,6 +340,15 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
                          x16 / resid_scale, Qidxs_list[1].view(
                              m // 16, n // 64, 8, 4),
                          self.codebook.grid_packed_abs)).to(torch.float32)
+                '''
+                x = (torch.ops.quip_lib.decode_matvec_e8p(
+                    x16, Qidxs_list[0].view(m // 16, n // 64, 8, 4),
+                    self.codebook.grid_packed_abs, m, n) +
+                     torch.ops.quip_lib.decode_matvec_e8p(
+                         x16 / resid_scale, Qidxs_list[1].view(
+                             m // 16, n // 64, 8, 4),
+                         self.codebook.grid_packed_abs, m, n)).to(torch.float32)
+
             else:
                 W_decompressed = quiptools_cuda.decompress_packed_e8p(
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4), self.codebook.
@@ -349,9 +356,6 @@ class QuantizedE8P12RVQ4BLinear(nn.Module):
                         Qidxs_list[1].view(m // 16, n // 64, 8, 4),
                         self.codebook.grid_packed_abs) / resid_scale
                 x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
-
-            if rank > 0:
-                x = x + ABx.to(torch.float32)
 
             x = matmul_hadU_cuda(x, had_right, K_right)
 

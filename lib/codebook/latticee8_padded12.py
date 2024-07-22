@@ -225,42 +225,6 @@ class E8P12_codebook(nn.Module):
         return W_decompressed
 
 
-torch.library.define("quip_lib::decode_matvec_e8p", "(Tensor x, Tensor Qidxs, Tensor grid_packed_abs, int m, int n) -> Tensor")
-
-@torch.library.impl_abstract("quip_lib::decode_matvec_e8p")
-def decode_matvec_e8p_abstract(
-        x: torch.Tensor,
-        Qidxs: torch.Tensor,
-        grid_packed_abs: torch.Tensor,
-        m: int, n: int) -> torch.Tensor:
-    return x.new_empty(m, dtype=torch.float32, device=x.device)
-
-@torch.library.impl("quip_lib::decode_matvec_e8p", "cuda")
-def decode_matvec_e8p_cuda(
-        x: torch.Tensor,
-        Qidxs: torch.Tensor,
-        grid_packed_abs: torch.Tensor,
-        m: int, n: int) -> torch.Tensor:
-    return quiptools_cuda.decode_matvec_e8p(x, Qidxs, grid_packed_abs)
-
-
-torch.library.define("quip_lib::decompress_packed_e8p", "(Tensor Qidxs, Tensor grid_packed_abs, int m, int n) -> Tensor")
-
-@torch.library.impl_abstract("quip_lib::decompress_packed_e8p")
-def decompress_packed_e8p_abstract(
-        Qidxs: torch.Tensor,
-        grid_packed_abs: torch.Tensor,
-        m: int, n: int) -> torch.Tensor:
-    return Qidxs.new_empty(m, n, dtype=torch.float16, device=Qidxs.device)
-
-@torch.library.impl("quip_lib::decompress_packed_e8p", "cuda")
-def decompress_packed_e8p_cuda(
-        Qidxs: torch.Tensor,
-        grid_packed_abs: torch.Tensor,
-        m: int, n: int) -> torch.Tensor:
-    return quiptools_cuda.decompress_packed_e8p(Qidxs, grid_packed_abs)
-
-
     
 class QuantizedE8P12Linear(nn.Module):
 
