@@ -1,25 +1,28 @@
 # [QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks](https://arxiv.org/abs/2402.04396), ICML 2024
-This repository contains the official code for **QuIP#**, a weight-only post-training quantization method that achieves state-of-the-art performance in extreme compression ($\le 4$ bits per weight) regimes.
-QuIP# improves the incoherence processing of [QuIP](https://openreview.net/pdf?id=xrk9g5vcXR) by using the randomized Hadamard transform (RHT). 
-QuIP# also introduces fast vector quantization codebooks based on the $E_8$ lattice and a fine-tuning scheme to further improve quantization quality.
-**QuIP# is the first PTQ method where 3 bit models scale better than theoretically lossless 4 bit models**
 
-We provide a full suite of 2, 3, and 4 bit Llama models quantized using QuIP# [here](https://huggingface.co/relaxml).
-This codebase contains code that allows users to quantize and deploy their own models as well as CUDA kernels that accelerate inference for QuIP# models.
-**Please open a GitHub ticket if you have any questions about the code or QuIP# in general.**
+QuIP# is a weight-only post-training quantization method that achieves state-of-the-art performance in extreme compression ($\le 4$ bits per weight) regimes.
+QuIP# introduces (1) faster and better [incoherence processing](https://openreview.net/pdf?id=xrk9g5vcXR) with the randomized Hadamard transform (RHT), (2) fast vector quantization with $E_8$ lattice-based codebooks, and (3) a fine-tuning scheme to capture inter-layer interactions.
+This codebase contains code that allows users to quantize and deploy their own QuIP# models as well as CUDA kernels for fast inference.
+Please open a GitHub ticket if you have any questions about the code or QuIP# in general.
+Prequantized QuIP# models are available [here](https://huggingface.co/relaxml).
+
+### QuIP# Scaling
+QuIP# is the first PTQ method where 3 bit models scale better than theoretically lossless 4 bit models.
 
 <img src="assets/quip.PNG" width="500">
 
-Inference throughput with HF's Llama and CUDA graphs on a RTX 4090:
+### QuIP# Inference Throughput
+Timed on a RTX 4090 with HuggingFace's Llama implementation and CUDA graphs. https://github.com/Cornell-RelaxML/quip-sharp/pull/65 uses a better HF CUDA graph implementation and should get close to 200 tok/s but I haven't been able to retest on a 4090 yet.
 |    Method   |    2-7B    | 2-70B |
 |:-----------:|:----------:|:-----:|
 |     FP16    | 33.1 tok/s |  OOM  |
 |  AQLM 2 Bit |    20.6    |  8.27 |
-| QuIP# 2 Bit |    106.3   |  25.9 |
+| QuIP# 2 Bit |    >106.3   |  >25.9 |
+
 
 ## Latest Updates
 
-- **[This PR](https://github.com/Cornell-RelaxML/quip-sharp/pull/65) enables fast inference on HF with CUDA graphs! This change removes kernel launch time overhead and lets QuIP# models generate text at over 100 tokens/s.** 
+- **[This PR](https://github.com/Cornell-RelaxML/quip-sharp/pull/65) enables fast HF inference with CUDA graphs! This change lets QuIP# models generate text at over 150 tokens/s.** 
 - QuIP# will appear at ICML 2024 in Vienna, Austria. Feel free to visit us if you're around!
 - Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), enables ultra high-dimensional quantization with fast inference through a specially designed trellis quantizer. When used as a replacement for E8P in QuIP#, QTIP achieves state-of-the-art results amongst methods that support fast inference. We plan on releasing a joint QuIP#/QTIP PyPI package in the future.
 
