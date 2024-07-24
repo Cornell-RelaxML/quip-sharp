@@ -12,12 +12,12 @@ QuIP# is the first PTQ method where 3 bit models scale better than theoretically
 <img src="assets/quip.PNG" width="500">
 
 ### QuIP# Inference Throughput
-Timed on a RTX 4090 with HuggingFace's Llama implementation and CUDA graphs. https://github.com/Cornell-RelaxML/quip-sharp/pull/65 uses a better HF CUDA graph implementation and should get close to 200 tok/s but I haven't been able to retest on a 4090 yet.
+Timed on a RTX6000 ADA with https://github.com/Cornell-RelaxML/quip-sharp/pull/65.
 |    Method   |    2-7B    | 2-70B |
 |:-----------:|:----------:|:-----:|
-|     FP16    | 33.1 tok/s |  OOM  |
-|  AQLM 2 Bit |    20.6    |  8.27 |
-| QuIP# 2 Bit |    >106.3   |  >25.9 |
+|     FP16    | 57.7 tok/s |  OOM  |
+|  AQLM 2 Bit |    81.1    |  8.72 |
+| QuIP# 2 Bit |    176   |  21.9 |
 
 
 ## Latest Updates
