@@ -9,6 +9,7 @@ from transformers import AutoTokenizer, StaticCache
 from lib.utils.unsafe_import import model_from_hf_path
 torch.set_grad_enabled(False)
 torch.set_float32_matmul_precision('high')
+torch.backends.cuda.matmul.allow_tf32 = True
 
 def multinomial_sample_one_no_sync(probs_sort): # Does multinomial sampling without a cuda synchronization
     q = torch.empty_like(probs_sort).exponential_(1)
@@ -52,15 +53,18 @@ def generate(model, tokenizer, text, max_new_tokens, top_k, callback):
     callback(next_token)
 
     cache_position = torch.tensor([seq_length + 1], device=model.device)
+    decode_time = time.time()
     for _ in range(1, max_new_tokens):
-        with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True):
+        with torch.backends.cuda.sdp_kernel(enable_flash=True, enable_mem_efficient=False, enable_math=True):
             next_token = decode_one_tokens(model, next_token.clone(), cache_position)
         generated_ids[:, cache_position] = next_token.int()
         callback(next_token)
         cache_position += 1
+    torch.cuda.synchronize()
+    decode_time = time.time() - decode_time
 
     text = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    return generated_ids, text
+    return generated_ids, text, max_new_tokens/decode_time
 
 
 def main(hf_path, compile, interactive, num_samples, max_tokens, top_k):
@@ -80,7 +84,7 @@ def main(hf_path, compile, interactive, num_samples, max_tokens, top_k):
         decode_one_tokens = torch.compile(decode_one_tokens, mode="max-autotune", fullgraph=True)
         text = "Test"
         callback = lambda x : x
-        ids, text = generate(model, tokenizer, text, max_tokens, top_k, callback)
+        ids, text, _ = generate(model, tokenizer, text, max_tokens, top_k, callback)
 
         
     while True:
@@ -112,14 +116,12 @@ def main(hf_path, compile, interactive, num_samples, max_tokens, top_k):
                 buffer.clear()
         if not interactive:
             callback = lambda x : x
-        start_time = time.time()
-        ids, text = generate(model, tokenizer, text, max_tokens, top_k, callback)
-        cost_time = time.time() - start_time
+        ids, text, decode_tps = generate(model, tokenizer, text, max_tokens, top_k, callback)
         if not interactive:
             print(text)
         else:
             print()
-        print(f"Inference throughput: {max_tokens / cost_time:.02f} tokens/sec")
+        print(f"Decoding throughput: {decode_tps:.02f} tokens/sec")
 
 
 if __name__ == '__main__':
