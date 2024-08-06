@@ -32,12 +32,13 @@ def model_from_hf_path(path,
             raise Exception
     else:
         model_cls = transformers.AutoModelForCausalLM
+        model_str = path
 
     model = maybe_wrap(use_cuda_graph)(model_cls).from_pretrained(
         path,
         torch_dtype='auto',
         low_cpu_mem_usage=True,
-        use_flash_attention_2=use_flash_attn,
-        device_map=device_map).half()
+        attn_implementation='sdpa',
+        device_map=device_map)
 
     return model, model_str

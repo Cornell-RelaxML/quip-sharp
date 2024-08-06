@@ -87,63 +87,32 @@ def matmul_hadUt(X):
     return matmul_hadU(X, transpose=True)
 
 
+torch.library.define("quip_lib::hadamard", "(Tensor x, float scale) -> Tensor")
+
+@torch.library.impl_abstract("quip_lib::hadamard")
+def hadamard_abstract(x: torch.Tensor, scale: float) -> torch.Tensor:
+    return x
+
+@torch.library.impl("quip_lib::hadamard", "default")
+def hadamard(x: torch.Tensor, scale: float) -> torch.Tensor:
+    return fast_hadamard_transform.hadamard_transform(x, scale)
+
+
 def matmul_hadU_cuda(X, hadK, K, transpose=False):
     n = X.shape[-1]
     if K == 1:
-        return fast_hadamard_transform.hadamard_transform(
-            X.contiguous()) / torch.tensor(n).sqrt()
+        return torch.ops.quip_lib.hadamard(X.contiguous(), 1/(n**0.5))
 
     if transpose:
         hadK = hadK.T.contiguous()
-    input = X.float().cuda().view(-1, K, n // K)
-    input = fast_hadamard_transform.hadamard_transform(input.contiguous())
+    input = X.float().view(-1, K, n // K)
+    input = torch.ops.quip_lib.hadamard(input.contiguous(), 1/(n**0.5))
     input = hadK.to(input.device).to(input.dtype) @ input
-    return input.to(X.device).to(X.dtype).reshape(
-        X.shape) / torch.tensor(n).sqrt()
-
+    return input.to(X.device).to(X.dtype).reshape(X.shape)
+ 
 
 def matmul_hadUt_cuda(X, hadK, K):
     return matmul_hadU_cuda(X, hadK, K, transpose=True)
-
-
-from torch.cuda.amp import custom_bwd, custom_fwd
-
-
-class AutogradMatmulHadUCuda(torch.autograd.Function):
-
-    @staticmethod
-    @custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, x, had_right, K_right):
-        ctx.K_right = K_right
-        ctx.save_for_backward(had_right)
-        return matmul_hadU_cuda(x, had_right, K_right)
-
-    @staticmethod
-    @custom_bwd
-    def backward(ctx, grad_output):
-        if ctx.needs_input_grad[0]:
-            had_right = ctx.saved_tensors[0]
-            grad = matmul_hadUt_cuda(grad_output, had_right, ctx.K_right)
-        return grad, None, None, None
-
-
-class AutogradMatmulHadUTCuda(torch.autograd.Function):
-
-    @staticmethod
-    @custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, x, had_left, K_left):
-        ctx.K_left = K_left
-        ctx.save_for_backward(had_left)
-        return matmul_hadUt_cuda(x, had_left, K_left)
-
-    @staticmethod
-    @custom_bwd
-    def backward(ctx, grad_output):
-        if ctx.needs_input_grad[0]:
-            had_left = ctx.saved_tensors[0]
-            grad = matmul_hadU_cuda(grad_output, had_left, ctx.K_left)
-        return grad, None, None, None
-
 
 def is_pow2(n):
     return (n & (n - 1) == 0) and (n > 0)
