@@ -225,6 +225,7 @@ class E8P12_codebook(nn.Module):
         return W_decompressed
 
 
+    
 class QuantizedE8P12Linear(nn.Module):
 
     def __init__(self, device):
@@ -253,7 +254,7 @@ class QuantizedE8P12Linear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                had_left,
+                had_left_T,
                 had_right,
                 K_left,
                 K_right,
@@ -273,25 +274,20 @@ class QuantizedE8P12Linear(nn.Module):
         if train_mode:
             x = (x.to(torch.float16) @ self.W).float()
         else:
-            x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
-
-            if rank > 0:
-                Bx = x @ B.t().to(torch.float32)
-                ABx = Bx @ A.t().to(torch.float32)
-
+            x = matmul_hadU_cuda(x, had_left_T, K_left) / self.scale
+                
             if x.size(0) == 1:
-                x = quiptools_cuda.decode_matvec_e8p(
+                x = torch.ops.quip_lib.decode_matvec_e8p(
                     x[0].to(torch.float16),
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
-                    self.codebook.grid_packed_abs).to(torch.float32)
+                    self.codebook.grid_packed_abs,
+                    m, n).to(torch.float32)
             else:
-                W_decompressed = quiptools_cuda.decompress_packed_e8p(
+                W_decompressed = torch.ops.quip_lib.decompress_packed_e8p(
                     Qidxs_list[0].view(m // 16, n // 64, 8, 4),
-                    self.codebook.grid_packed_abs)
+                    self.codebook.grid_packed_abs,
+                    m, n)
                 x = (x.to(torch.float16) @ W_decompressed.T).to(torch.float32)
-
-            if rank > 0:
-                x = x + ABx.to(torch.float32)
 
             x = matmul_hadU_cuda(x, had_right, K_right)
 
@@ -299,3 +295,6 @@ class QuantizedE8P12Linear(nn.Module):
 
         output = x.view(*input.shape[:-1], m)
         return output
+
+
+    

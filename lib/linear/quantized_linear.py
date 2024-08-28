@@ -27,7 +27,7 @@ class QuantizedLinear(nn.Module):
         grad_ckpt=False,
     ):
         super().__init__()
-
+        assert rank == 0 # 7/22/2024 removed support for low rank correction
         self.in_features = in_features
         self.out_features = out_features
         self.rank = rank
@@ -75,10 +75,14 @@ class QuantizedLinear(nn.Module):
         self.built_graph = False
         self.codebook_version = codebook_version
 
-        had_left, K_left = get_hadK(in_features)
+        had_left_T, K_left = get_hadK(in_features)
+        if had_left_T is not None:
+            had_left_T = had_left_T.T.contiguous()
+        self.register_buffer('had_left_T', had_left_T, persistent=False)
+        
         had_right, K_right = get_hadK(out_features)
-        self.register_buffer('had_left', had_left, persistent=False)
         self.register_buffer('had_right', had_right, persistent=False)
+        
         self.K_left = K_left
         self.K_right = K_right
         self.packed = (packsz != 1)
@@ -125,15 +129,15 @@ class QuantizedLinear(nn.Module):
                     len(self.SU),
                     len(self.SV),
                     self.Qidxs_list,
-                    self.had_left,
+                    self.had_left_T.T.contiguous(),
                     self.had_right,
                     self.K_left,
                     self.K_right,
                     resid_scale_override=self.resid_scale_override,
                 )
-                del self.Qidxs_list, self.had_left, self.had_right, self.K_left, self.K_right
+                del self.Qidxs_list, self.had_left_T, self.had_right, self.K_left, self.K_right
                 self.Qidxs_list = None
-                self.had_left = None
+                self.had_left_T = None
                 self.had_right = None
                 self.K_left = None
                 self.K_right = None
@@ -146,7 +150,7 @@ class QuantizedLinear(nn.Module):
             self.Qidxs_list,
             self.SU,
             self.SV,
-            self.had_left,
+            self.had_left_T,
             self.had_right,
             self.K_left,
             self.K_right,
