@@ -12,7 +12,7 @@ QuIP# is the first PTQ method where 3 bit models scale better than theoretically
 <img src="assets/quip.PNG" width="500">
 
 ### QuIP# Inference Throughput
-Timed on a RTX6000 ADA with https://github.com/Cornell-RelaxML/quip-sharp/pull/65.
+Timed on a RTX6000 ADA.
 |    Method   |    2-7B    | 2-70B |
 |:-----------:|:----------:|:-----:|
 |     FP16    | 57.7 tok/s |  OOM  |
@@ -22,9 +22,7 @@ Timed on a RTX6000 ADA with https://github.com/Cornell-RelaxML/quip-sharp/pull/6
 
 ## Latest Updates
 
-- **[This PR](https://github.com/Cornell-RelaxML/quip-sharp/pull/65) enables fast HF inference with CUDA graphs! This change lets QuIP# models generate text at over 150 tokens/s.** 
-- QuIP# will appear at ICML 2024 in Vienna, Austria. Feel free to visit us if you're around!
-- Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), enables ultra high-dimensional quantization with fast inference through a specially designed trellis quantizer. When used as a replacement for E8P in QuIP#, QTIP achieves state-of-the-art results amongst methods that support fast inference. We plan on releasing a joint QuIP#/QTIP PyPI package in the future.
+- Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), uses trellis quantization to achieve even higher quality quantized models.
 
 ## Installation
 
