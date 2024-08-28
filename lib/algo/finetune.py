@@ -25,12 +25,16 @@ def finetune_decoder_layer(layer, name, device, train_dl, valid_dl, args):
     glog.info(f'layer {name} initial loss {best_loss}')
     scaler = torch.cuda.amp.GradScaler(enabled=True)
     worse_ct = 0
+    position_ids = None
+
     for epoch in range(args.ft_epochs):
         for bidx, (source, targets) in enumerate(train_dl):
+            if position_ids is None:
+                position_ids = torch.arange(source.shape[1], device=device).unsqueeze(0)
             with torch.autocast(device_type='cuda',
                                 dtype=torch.float16,
                                 enabled=True):
-                output = layer(source.to(device))[0]
+                output = layer(source.to(device), position_ids=position_ids)[0]
                 loss = nn.MSELoss()(output, targets.to(device))
             scaler.scale(loss).backward()
             if bidx % args.ft_update_freq == args.ft_update_freq - 1 or bidx == len(
