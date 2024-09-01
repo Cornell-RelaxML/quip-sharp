@@ -137,4 +137,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args.hf_path, args.compile, args.streaming, args.num_samples, args.max_new_tokens, args.top_k)
-B
