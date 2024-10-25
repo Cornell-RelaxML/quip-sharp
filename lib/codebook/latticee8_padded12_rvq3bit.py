@@ -365,7 +365,7 @@ class QuantizedE8P12RVQ3BLinear(nn.Module):
                 Qidxs_list,
                 SU,
                 SV,
-                had_left,
+                had_left_T,
                 had_right,
                 K_left,
                 K_right,
@@ -388,7 +388,7 @@ class QuantizedE8P12RVQ3BLinear(nn.Module):
         if train_mode:
             x = (x.to(torch.float16) @ self.W).float()
         else:
-            x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
+            x = matmul_hadU_cuda(x, had_left_T, K_left) / self.scale
 
             if rank > 0:
                 Bx = x @ B.t().to(torch.float32)
