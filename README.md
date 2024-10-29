@@ -1,6 +1,6 @@
 # [QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks](https://arxiv.org/abs/2402.04396), ICML 2024
 
-## 🚨 Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), uses trellis quantization to achieve even higher quality quantized models. This codebase is no longer active development.
+## 🚨 Our latest method, [QTIP](https://github.com/Cornell-RelaxML/qtip), uses trellis quantization to achieve even higher quality quantized models. This codebase is no longer under active development.
 
 QuIP# is a weight-only post-training quantization method that achieves state-of-the-art performance in extreme compression ($\le 4$ bits per weight) regimes.
 QuIP# introduces (1) faster and better [incoherence processing](https://openreview.net/pdf?id=xrk9g5vcXR) with the randomized Hadamard transform (RHT), (2) fast vector quantization with $E_8$ lattice-based codebooks, and (3) a fine-tuning scheme to capture inter-layer interactions.
